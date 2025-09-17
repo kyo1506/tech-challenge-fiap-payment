@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  payment-db:
+    image: postgres:15
+    container_name: payment-db-postgres
+    environment:
+      - POSTGRES_PASSWORD=masterkey
+      - POSTGRES_DB=payment_service_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+   
+  message-broker:
+    image: rabbitmq:3-management
+    container_name: payment-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq/
+volumes:
+  pgdata: 
+  rabbitmq_data:
