@@ -22,8 +22,7 @@ public static class PurchaseMapper
             Items = purchase.Items.Select(item => new PurchaseItemResponse
             {
                 GameId = item.GameId,
-                GameName = item.GameName,
-                PricePaid = item.Price
+                PricePaid = item.FinalPrice
             }).ToList()
         };
     }

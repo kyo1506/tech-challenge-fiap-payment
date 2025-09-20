@@ -12,7 +12,17 @@ public class MartenPurchaseRepository(IDocumentSession _session) : IPurchaseRepo
 {
     public async Task<Purchase?> GetByIdAsync(Guid purchaseId)
     {
-        return await _session.LoadAsync<Purchase>(purchaseId);
+        var events = await _session.Events.FetchStreamAsync(purchaseId);
+
+        if (events == null || !events.Any())
+        {
+            return null;
+        }
+        var eventData = events.Select(e => e.Data).ToList();
+
+        var purchase = new Purchase(eventData);
+
+        return purchase;
     }
 
     public Task StoreAsync(Purchase purchase)

@@ -7,10 +7,6 @@ using System.Threading.Tasks;
 
 namespace Shared.DTOs.Commands;
 
-public record CreatePurchaseCommand(
-    [Required] Guid UserId,
-    [Required][MinLength(1)] List<Guid> GameIds);
-
 public record CreateRefundCommand(
     [Required] Guid PurchaseId,
     string? Reason);

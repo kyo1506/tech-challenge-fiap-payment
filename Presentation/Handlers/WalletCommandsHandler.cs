@@ -1,4 +1,5 @@
 ﻿using Application.Interfaces.Services;
+using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.DTOs.Commands;
@@ -7,7 +8,10 @@ using System.Text.Json;
 
 namespace Presentation.Handlers;
 
-public class WalletCommandsHandler(IServiceScopeFactory _scopeFactory,IConnection _connection) : IHostedService, IDisposable
+public class WalletCommandsHandler(
+    IServiceScopeFactory _scopeFactory,
+    IConnection _connection,
+    ILogger<WalletCommandsHandler> _logger) : IHostedService, IDisposable
 {
     private const string ExchangeName = "payment_exchange";
     private const string QueueName = "wallet_commands_queue";
@@ -23,13 +27,13 @@ public class WalletCommandsHandler(IServiceScopeFactory _scopeFactory,IConnectio
             var body = ea.Body.ToArray();
             var message = Encoding.UTF8.GetString(body);
             var routingKey = ea.RoutingKey;
-
             try
             {
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var walletService = scope.ServiceProvider.GetRequiredService<IWalletApplicationService>();
 
+                    _logger.LogInformation("New message received. Routing key: {RoutingKey}", routingKey);
                     if (routingKey == "wallet.command.deposit")
                     {
                         var command = JsonSerializer.Deserialize<CreateDepositCommand>(message);
@@ -43,9 +47,12 @@ public class WalletCommandsHandler(IServiceScopeFactory _scopeFactory,IConnectio
                 }
 
                 _channel.BasicAck(ea.DeliveryTag, multiple: false);
+                _logger.LogInformation("Command completed for Routing Key {RoutingKey}", routingKey);
+
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error processing message with routing key {RoutingKey}", routingKey);
                 _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
             }
         };
