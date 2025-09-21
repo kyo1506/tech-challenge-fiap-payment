@@ -1,4 +1,5 @@
-﻿using Application.Interfaces.RabbitMQ;
+﻿using Application.Interfaces.Event;
+using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
 using Application.Mappers;
 using Domain.Aggregates;
@@ -23,7 +24,7 @@ namespace Application.Services;
 
 public class WalletApplicationService(
     IWalletRepository _walletRepository,
-    IDocumentSession _session,
+    IEventStoreUnitOfWork _unitOfWork,
     IMessageBusClient _messageBus,
     ILogger<WalletApplicationService> _logger) : IWalletApplicationService
 {
@@ -44,6 +45,8 @@ public class WalletApplicationService(
             wallet.Deposit(command.Amount);
 
             await _walletRepository.StoreAsync(wallet);
+            await _unitOfWork.SaveChangesAsync();
+
             _logger.LogInformation("Deposit for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
 
             var depositEvent = new FundsDepositedEvent(command.UserId, command.Amount);
@@ -81,6 +84,8 @@ public class WalletApplicationService(
             wallet.Withdraw(command.Amount);
 
             await _walletRepository.StoreAsync(wallet);
+            await _unitOfWork.SaveChangesAsync();
+
             _logger.LogInformation("Withdrawal for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
 
             var withdrawalEvent = new FundsWithdrawnEvent(command.UserId, command.Amount);

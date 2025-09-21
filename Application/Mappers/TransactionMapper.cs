@@ -1,5 +1,6 @@
 ﻿using Domain.Aggregates;
 using Domain.Entities;
+using Domain.QueryModels;
 using JasperFx.Events;
 using Shared.DTOs.Responses;
 using System;
@@ -23,27 +24,27 @@ public static class TransactionMapper
     }
 
     public static TransactionHistoryResponse ToHistoryResponse(
-        this IReadOnlyList<IEvent> events,
+        this IReadOnlyList<HistoricEvent> historyEvents,
         Guid userId,
         decimal currentBalance)
     {
         var historyItems = new List<TransactionHistoryItem>();
 
-        foreach (var e in events)
+        foreach (var e in historyEvents)
         {
-            switch (e.Data)
+            switch (e.EventData)
             {
                 case FundsDeposited fd:
-                    historyItems.Add(new TransactionHistoryItem { Type = "Deposit", Amount = fd.Amount, Timestamp = e.Timestamp.UtcDateTime });
+                    historyItems.Add(new TransactionHistoryItem { Type = "Deposit", Amount = fd.Amount, Timestamp = e.Timestamp });
                     break;
                 case FundsWithdrawn fw:
-                    historyItems.Add(new TransactionHistoryItem { Type = "Withdrawal", Amount = -fw.Amount, Timestamp = e.Timestamp.UtcDateTime });
+                    historyItems.Add(new TransactionHistoryItem { Type = "Withdrawal", Amount = -fw.Amount, Timestamp = e.Timestamp });
                     break;
                 case PurchasePaymentMade ppm:
-                    historyItems.Add(new TransactionHistoryItem { Type = "Purchase", Amount = -ppm.Amount, Timestamp = e.Timestamp.UtcDateTime });
+                    historyItems.Add(new TransactionHistoryItem { Type = "Purchase", Amount = -ppm.Amount, Timestamp = e.Timestamp });
                     break;
-                case PurchaseRefunded pr:
-                    historyItems.Add(new TransactionHistoryItem { Type = "Refund", Amount = pr.Amount, Timestamp = e.Timestamp.UtcDateTime });
+                case WalletCreditedForPurchaseRefund pr:
+                    historyItems.Add(new TransactionHistoryItem { Type = "Refund", Amount = pr.Amount, Timestamp = e.Timestamp });
                     break;
             }
         }

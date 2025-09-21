@@ -11,21 +11,19 @@ public class UserWallet
 {
     public Guid Id { get; private set; }
     public decimal Balance { get; private set; }
-
     public long Version { get; private set; }
 
     private readonly List<object> _uncommittedEvents = new();
-    private long _originalVersion;
-
     public IEnumerable<object> GetUncommittedEvents() => _uncommittedEvents;
 
-    public UserWallet(Guid userId)
+    public UserWallet(Guid userId) => Raise(new WalletCreated(userId));
+    public UserWallet(IEnumerable<object> history)
     {
-        Raise(new WalletCreated(userId));
-        _originalVersion = 0;
-        Version = 0;
+        foreach (var @event in history)
+        {
+            Apply(@event);
+        }
     }
-
     private UserWallet() { }
 
     private void Raise(object @event)
@@ -36,40 +34,15 @@ public class UserWallet
 
     private void Apply(object @event)
     {
+        Version++;
         switch (@event)
         {
-            case WalletCreated e:
-                Id = e.UserId;
-                Balance = 0;
-                break;
-            case FundsDeposited e:
-                Balance += e.Amount;
-                break;
-            case FundsWithdrawn e:
-                Balance -= e.Amount;
-                break;
-            case PurchasePaymentMade e:
-                Balance -= e.Amount;
-                break;
-            case PurchaseRefunded e:
-                Balance += e.Amount;
-                break;
+            case WalletCreated e: Id = e.UserId; Balance = 0; break;
+            case FundsDeposited e: Balance += e.Amount; break;
+            case FundsWithdrawn e: Balance -= e.Amount; break;
+            case PurchasePaymentMade e: Balance -= e.Amount; break;
+            case WalletCreditedForPurchaseRefund e: Balance += e.Amount; break;
         }
-    }
-
-    public long GetOriginalVersion() => _originalVersion;
-
-    public void LoadOriginalVersion(long version)
-    {
-        _originalVersion = version;
-        Version = version; 
-    }
-
-    public void MarkEventsAsCommitted()
-    {
-        _originalVersion = Version + _uncommittedEvents.Count;
-        Version = _originalVersion;
-        _uncommittedEvents.Clear();
     }
 
     public void Deposit(decimal amount)
@@ -96,7 +69,7 @@ public class UserWallet
         if (amountToCredit <= 0)
             throw new DomainException("Refund amount must be positive.");
 
-        Raise(new PurchaseRefunded(Id, purchaseId, amountToCredit));
+        Raise(new WalletCreditedForPurchaseRefund(Id, purchaseId, amountToCredit));
     }
 
     public void ProcessPayment(Guid purchaseId, decimal amount)

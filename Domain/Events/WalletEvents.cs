@@ -11,5 +11,5 @@ public class WalletEvents {
     public record FundsDeposited(Guid WalletId, decimal Amount);
     public record FundsWithdrawn(Guid WalletId, decimal Amount, string Reason = "Withdrawal");
     public record PurchasePaymentMade(Guid WalletId, Guid PurchaseId, decimal Amount);
-    public record PurchaseRefunded(Guid WalletId, Guid PurchaseId, decimal Amount);
+    public record WalletCreditedForPurchaseRefund(Guid WalletId, Guid PurchaseId, decimal Amount);
 }

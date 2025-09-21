@@ -1,4 +1,5 @@
-﻿using Application.Interfaces.RabbitMQ;
+﻿using Application.Interfaces.Event;
+using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
 using Application.Mappers;
 using Domain.Aggregates;
@@ -23,7 +24,7 @@ namespace Application.Services;
 public class PurchaseApplicationService(
     IPurchaseRepository _purchaseRepository,
     IWalletRepository _walletRepository,
-    IDocumentSession _session,
+    IEventStoreUnitOfWork _unitOfWork,
     IMessageBusClient _messageBus,
     ILogger<PurchaseApplicationService> _logger) : IPurchaseApplicationService
 {
@@ -60,7 +61,7 @@ public class PurchaseApplicationService(
 
             _logger.LogInformation("Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
-            await _session.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             var purchaseCompletedEvent = new PurchaseCompletedEvent(
                 purchase.Id,
@@ -112,7 +113,7 @@ public class PurchaseApplicationService(
             await _purchaseRepository.StoreAsync(purchase);
             await _walletRepository.StoreAsync(wallet);
 
-            await _session.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
             _logger.LogInformation("Refund for Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
             var refundCompletedEvent = new RefundCompletedEvent(

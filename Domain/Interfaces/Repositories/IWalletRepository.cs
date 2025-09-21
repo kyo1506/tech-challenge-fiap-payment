@@ -1,5 +1,6 @@
 ﻿using Domain.Aggregates;
 using Domain.Entities;
+using Domain.QueryModels;
 using JasperFx.Events;
 using Marten;
 using Marten.Events;
@@ -15,5 +16,5 @@ public interface IWalletRepository
 {
     Task<UserWallet?> GetByUserIdAsync(Guid userId);
     Task StoreAsync(UserWallet wallet);
-    Task<IReadOnlyList<IEvent>> GetHistoryAsync(Guid userId);
+    Task<IReadOnlyList<HistoricEvent>> GetHistoryAsync(Guid userId);
 }
