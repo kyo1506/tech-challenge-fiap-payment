@@ -4,8 +4,9 @@ services:
     image: postgres:15
     container_name: payment-db-postgres
     environment:
-      - POSTGRES_PASSWORD=masterkey
       - POSTGRES_DB=payment_service_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=masterkey 
     ports:
       - "5432:5432"
     volumes:
@@ -28,7 +29,7 @@ services:
     container_name: payment-elasticsearch
     environment:
       - "discovery.type=single-node"
-      - "xpack.security.enabled=false" # Desabilita segurança para ambiente de dev
+      - "xpack.security.enabled=false" 
     ports:
       - "9200:9200"
     volumes:
@@ -43,6 +44,27 @@ services:
       - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" 
     depends_on:
       - elasticsearch
+  payment-service:
+    image: payment-service 
+    build: .
+    depends_on:
+      - payment-db
+      - message-broker
+      - elasticsearch
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=payment-db;Port=5432;Database=payment_service_db;Username=postgres;Password=masterkey
+      
+      - MessageBus__Host=message-broker
+      - MessageBus__Username=guest
+      - MessageBus__Password=guest
+
+      - Serilog__WriteTo__1__Args__nodeUris=http://elasticsearch:9200
+    ports:
+      # Mapeia a porta 8000 do seu PC para a porta 8080 do contêiner (HTTP)
+      - "8000:8080" 
+      # Mapeia a porta 8001 do seu PC para a porta 443 do contêiner (HTTPS)
+      - "8001:443" 
+    restart: always
 volumes:
   pgdata: 
   rabbitmq_data:

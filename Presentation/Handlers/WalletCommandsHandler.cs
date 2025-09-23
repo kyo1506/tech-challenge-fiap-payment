@@ -1,4 +1,6 @@
-﻿using Application.Interfaces.Services;
+﻿using Amazon.SQS;
+using Amazon.SQS.Model;
+using Application.Interfaces.Services;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -10,78 +12,88 @@ namespace Presentation.Handlers;
 
 public class WalletCommandsHandler(
     IServiceScopeFactory _scopeFactory,
-    IConnection _connection,
-    ILogger<WalletCommandsHandler> _logger) : IHostedService, IDisposable
+    ILogger<WalletCommandsHandler> _logger,
+    IAmazonSQS _sqsClient,
+    IConfiguration _configuration) : IHostedService, IDisposable
 {
-    private const string ExchangeName = "payment_exchange";
-    private const string QueueName = "wallet_commands_queue";
-    private IModel _channel;
+    private readonly string _queueUrl = _configuration["AWS:WalletCommandQueueUrl"];
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        StartModel();
+        _logger.LogInformation("Wallet Commands Handler is starting.");
+        Task.Run(() => PollQueueAsync(cancellationToken), cancellationToken);
+        return Task.CompletedTask;
+    }
 
-        var consumer = new AsyncEventingBasicConsumer(_channel);
+    private async Task PollQueueAsync(CancellationToken cancellationToken)
+    {
+        var serializerOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-        consumer.Received += async (model, ea) =>
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var body = ea.Body.ToArray();
-            var message = Encoding.UTF8.GetString(body);
-            var routingKey = ea.RoutingKey;
             try
             {
-                using (var scope = _scopeFactory.CreateScope())
+                var receiveRequest = new ReceiveMessageRequest
                 {
-                    var walletService = scope.ServiceProvider.GetRequiredService<IWalletApplicationService>();
+                    QueueUrl = _queueUrl,
+                    MaxNumberOfMessages = 10,
+                    WaitTimeSeconds = 20
+                };
+                var response = await _sqsClient.ReceiveMessageAsync(receiveRequest, cancellationToken);
 
-                    _logger.LogInformation("New message received. Routing key: {RoutingKey}", routingKey);
-                    if (routingKey == "wallet.command.deposit")
-                    {
-                        var command = JsonSerializer.Deserialize<CreateDepositCommand>(message);
-                        if (command != null) await walletService.CreateDepositAsync(command);
-                    }
-                    else if (routingKey == "wallet.command.withdraw")
-                    {
-                        var command = JsonSerializer.Deserialize<CreateWithdrawalCommand>(message);
-                        if (command != null) await walletService.CreateWithdrawalAsync(command);
-                    }
+                foreach (var message in response.Messages)
+                {
+                    await ProcessMessageAsync(message, serializerOptions);
+                    await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, cancellationToken);
                 }
-
-                _channel.BasicAck(ea.DeliveryTag, multiple: false);
-                _logger.LogInformation("Command completed for Routing Key {RoutingKey}", routingKey);
-
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing message with routing key {RoutingKey}", routingKey);
-                _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
+                _logger.LogError(ex, "Error polling Wallet SQS queue. Waiting 5 seconds before retry.");
+                await Task.Delay(5000, cancellationToken);
             }
-        };
+        }
+    }
 
-        _channel.BasicConsume(queue: QueueName, autoAck: false, consumer: consumer);
+    private async Task ProcessMessageAsync(Message message, JsonSerializerOptions options)
+    {
+        var envelope = JsonSerializer.Deserialize<CommandEnvelope>(message.Body, options);
+        var commandType = envelope?.CommandType;
+        var payload = envelope?.Payload?.GetRawText();
 
-        return Task.CompletedTask;
+        if (string.IsNullOrEmpty(commandType) || string.IsNullOrEmpty(payload))
+        {
+            _logger.LogWarning("Invalid message format received in Wallet queue. Deleting message.");
+            return;
+        }
+
+        _logger.LogInformation("New wallet command received: {CommandType}", commandType);
+
+        using var scope = _scopeFactory.CreateScope();
+        var walletService = scope.ServiceProvider.GetRequiredService<IWalletApplicationService>();
+
+        switch (commandType)
+        {
+            case "create-deposit":
+                var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload, options);
+                if (depositCmd != null) await walletService.CreateDepositAsync(depositCmd);
+                break;
+            case "create-withdraw":
+                var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload, options);
+                if (withdrawCmd != null) await walletService.CreateWithdrawalAsync(withdrawCmd);
+                break;
+            default:
+                _logger.LogWarning("Unsupported command type '{CommandType}' in Wallet queue. Message will be discarded.", commandType);
+                break;
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        Dispose();
+        _logger.LogInformation("Wallet Commands Handler is stopping.");
         return Task.CompletedTask;
     }
 
-    public void Dispose()
-    {
-        _channel?.Close();
-        _connection?.Close();
-    }
+    public void Dispose() { }
 
-    private void StartModel()
-    {
-        _channel = _connection.CreateModel();
-
-        _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic, durable: true);
-        _channel.QueueDeclare(queue: QueueName, durable: true, exclusive: false, autoDelete: false);
-
-        _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "wallet.command.deposit");
-        _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "wallet.command.withdraw");
-    }
+    private class CommandEnvelope { public string CommandType { get; set; } public JsonElement? Payload { get; set; } }
 }

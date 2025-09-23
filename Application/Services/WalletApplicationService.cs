@@ -7,7 +7,6 @@ using Domain.Entities;
 using Domain.Entities.Enums;
 using Domain.Exceptions;
 using Domain.Interfaces.Repositories;
-using Marten;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using Shared.DTOs.Commands;
@@ -25,7 +24,6 @@ namespace Application.Services;
 public class WalletApplicationService(
     IWalletRepository _walletRepository,
     IEventStoreUnitOfWork _unitOfWork,
-    IMessageBusClient _messageBus,
     ILogger<WalletApplicationService> _logger) : IWalletApplicationService
 {
 
@@ -50,7 +48,6 @@ public class WalletApplicationService(
             _logger.LogInformation("Deposit for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
 
             var depositEvent = new FundsDepositedEvent(command.UserId, command.Amount);
-            _messageBus.Publish(depositEvent, "wallet.funds.deposited");
 
             return new TransactionResponse
             {
@@ -89,7 +86,6 @@ public class WalletApplicationService(
             _logger.LogInformation("Withdrawal for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
 
             var withdrawalEvent = new FundsWithdrawnEvent(command.UserId, command.Amount);
-            _messageBus.Publish(withdrawalEvent, "wallet.funds.withdrawn");
 
             return new TransactionResponse
             {

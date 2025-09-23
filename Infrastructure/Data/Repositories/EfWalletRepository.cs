@@ -3,7 +3,6 @@ using Domain.Events;
 using Domain.Interfaces.Repositories;
 using Domain.QueryModels;
 using Infrastructure.Data.EventSourcing;
-using JasperFx.Events;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;

@@ -1,3 +1,5 @@
+using Amazon.SimpleNotificationService;
+using Amazon.SQS;
 using Application.Interfaces.Event;
 using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
@@ -15,6 +17,9 @@ using Serilog;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var awsOptions = builder.Configuration.GetAWSOptions();
+builder.Services.AddDefaultAWSOptions(awsOptions);
+
 builder.Services.AddDbContext<EventStoreDbContext>(options =>
     options.UseNpgsql(connectionString));
 
@@ -39,8 +44,13 @@ builder.Services.AddSingleton(factory.CreateConnection());
 builder.Services.AddHostedService<WalletCommandsHandler>();
 builder.Services.AddHostedService<PurchaseCommandsHandler>();
 
+builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
+builder.Services.AddAWSService<IAmazonSQS>();
+
 builder.Services.Configure<RabbitMQConfig>(builder.Configuration.GetSection("MessageBus"));
-builder.Services.AddSingleton<IMessageBusClient, RabbitMQClient>();
+builder.Services.AddSingleton<IMessageBusClient, SnsMessageBusClient>(); 
+builder.Services.AddHostedService<WalletCommandsHandler>();
+builder.Services.AddHostedService<PurchaseCommandsHandler>();
 
 builder.Services.AddScoped<IWalletRepository, EfWalletRepository>();
 builder.Services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();

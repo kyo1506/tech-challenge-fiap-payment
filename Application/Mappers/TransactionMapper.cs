@@ -1,7 +1,6 @@
 ﻿using Domain.Aggregates;
 using Domain.Entities;
 using Domain.QueryModels;
-using JasperFx.Events;
 using Shared.DTOs.Responses;
 using System;
 using System.Collections.Generic;

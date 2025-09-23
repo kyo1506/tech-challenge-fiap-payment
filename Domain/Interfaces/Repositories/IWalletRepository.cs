@@ -1,9 +1,6 @@
 ﻿using Domain.Aggregates;
 using Domain.Entities;
 using Domain.QueryModels;
-using JasperFx.Events;
-using Marten;
-using Marten.Events;
 using System;
 using System.Collections.Generic;
 using System.Linq;

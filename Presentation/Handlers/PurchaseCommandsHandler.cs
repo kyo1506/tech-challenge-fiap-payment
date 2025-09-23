@@ -1,5 +1,6 @@
-﻿using Application.Interfaces.Services;
-using Marten.Services.Json;
+﻿using Amazon.SQS;
+using Amazon.SQS.Model;
+using Application.Interfaces.Services;
 using Npgsql.Internal;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -11,82 +12,88 @@ namespace Presentation.Handlers;
 
 public class PurchaseCommandsHandler(
     IServiceScopeFactory _scopeFactory, 
-    IConnection _connection,
-    ILogger<PurchaseCommandsHandler> _logger) : IHostedService, IDisposable
+    ILogger<PurchaseCommandsHandler> _logger,
+    IAmazonSQS _sqsClient,
+    IConfiguration _configuration) : IHostedService, IDisposable
 {
-    private IModel _channel;
-    private const string ExchangeName = "payment_exchange";
-    private const string QueueName = "purchase_commands_queue";
+    private readonly string _queueUrl = _configuration["AWS:PurchaseCommandQueueUrl"];
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        StartModel(); 
-        var consumer = new AsyncEventingBasicConsumer(_channel);
+        _logger.LogInformation("Purchase Commands Handler is starting.");
+        Task.Run(() => PollQueueAsync(cancellationToken), cancellationToken);
+        return Task.CompletedTask;
+    }
 
-        consumer.Received += async (model, ea) =>
+    private async Task PollQueueAsync(CancellationToken cancellationToken)
+    {
+        var serializerOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        while (!cancellationToken.IsCancellationRequested)
         {
-            var body = ea.Body.ToArray();
-            var message = Encoding.UTF8.GetString(body);
-            var routingKey = ea.RoutingKey;
-
             try
             {
-                var serializerOptions = new JsonSerializerOptions
+                var receiveRequest = new ReceiveMessageRequest
                 {
-                    PropertyNameCaseInsensitive = true 
+                    QueueUrl = _queueUrl,
+                    MaxNumberOfMessages = 10,
+                    WaitTimeSeconds = 20
                 };
-                using (var scope = _scopeFactory.CreateScope())
+                var response = await _sqsClient.ReceiveMessageAsync(receiveRequest, cancellationToken);
+
+                foreach (var message in response.Messages)
                 {
-                    var purchaseService = scope.ServiceProvider.GetRequiredService<IPurchaseApplicationService>();
-                    _logger.LogInformation("New message received. Routing key: {RoutingKey}", routingKey);
-                    if (routingKey == "purchase.command.create")
-                    {
-                        var command = JsonSerializer.Deserialize<CreatePurchaseCommand>(message, serializerOptions);
-                        if (command != null) await purchaseService.CreatePurchaseAsync(command);
-                    }
-                    else if (routingKey == "purchase.command.refund")
-                    {
-                        var command = JsonSerializer.Deserialize<CreateRefundCommand>(message, serializerOptions);
-                        if (command != null) await purchaseService.CreateRefundAsync(command);
-                    }
+                    await ProcessMessageAsync(message, serializerOptions);
+                    await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, cancellationToken);
                 }
-
-                _channel.BasicAck(ea.DeliveryTag, multiple: false);
-                _logger.LogInformation("Command completed for Routing Key {RoutingKey}", routingKey);
-
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing message with routing key {RoutingKey}", routingKey);
-                _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
+                _logger.LogError(ex, "Error polling Purchase SQS queue. Waiting 5 seconds before retry.");
+                await Task.Delay(5000, cancellationToken);
             }
-        };
+        }
+    }
 
-        _channel.BasicConsume(queue: QueueName, autoAck: false, consumer: consumer);
+    private async Task ProcessMessageAsync(Message message, JsonSerializerOptions options)
+    {
+        var envelope = JsonSerializer.Deserialize<CommandEnvelope>(message.Body, options);
+        var commandType = envelope?.CommandType;
+        var payload = envelope?.Payload?.GetRawText();
 
-        return Task.CompletedTask;
+        if (string.IsNullOrEmpty(commandType) || string.IsNullOrEmpty(payload))
+        {
+            _logger.LogWarning("Invalid message format received in Purchase queue. Deleting message.");
+            return;
+        }
+
+        _logger.LogInformation("New purchase command received: {CommandType}", commandType);
+
+        using var scope = _scopeFactory.CreateScope();
+        var purchaseService = scope.ServiceProvider.GetRequiredService<IPurchaseApplicationService>();
+
+        switch (commandType)
+        {
+            case "create-purchase":
+                var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload, options);
+                if (purchaseCmd != null) await purchaseService.CreatePurchaseAsync(purchaseCmd);
+                break;
+            case "create-refund":
+                var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload, options);
+                if (refundCmd != null) await purchaseService.CreateRefundAsync(refundCmd);
+                break;
+            default:
+                _logger.LogWarning("Unsupported command type '{CommandType}' in Purchase queue. Message will be discarded.", commandType);
+                break;
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        Dispose();
+        _logger.LogInformation("Purchase Commands Handler is stopping.");
         return Task.CompletedTask;
     }
 
-    public void Dispose()
-    {
-        _channel?.Close();
-    }
+    public void Dispose() { }
 
-    private void StartModel()
-    {
-        _channel = _connection.CreateModel();
-
-        _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic, durable: true);
-
-        _channel.QueueDeclare(queue: QueueName, durable: true, exclusive: false, autoDelete: false);
-
-        _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "purchase.command.create");
-        _channel.QueueBind(queue: QueueName, exchange: ExchangeName, routingKey: "purchase.command.refund");
-
-    }
+    private class CommandEnvelope { public string CommandType { get; set; } public JsonElement? Payload { get; set; } }
 }

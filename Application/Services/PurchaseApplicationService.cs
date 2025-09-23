@@ -7,7 +7,6 @@ using Domain.Entities;
 using Domain.Entities.Enums;
 using Domain.Exceptions;
 using Domain.Interfaces.Repositories;
-using Marten;
 using Microsoft.Extensions.Logging;
 using Shared.DTOs;
 using Shared.DTOs.Commands;
@@ -25,7 +24,6 @@ public class PurchaseApplicationService(
     IPurchaseRepository _purchaseRepository,
     IWalletRepository _walletRepository,
     IEventStoreUnitOfWork _unitOfWork,
-    IMessageBusClient _messageBus,
     ILogger<PurchaseApplicationService> _logger) : IPurchaseApplicationService
 {
     private static readonly Random _random = new Random();
@@ -69,7 +67,6 @@ public class PurchaseApplicationService(
                 purchase.Items.Select(i => i.GameId).ToList()
             );
 
-            _messageBus.Publish(purchaseCompletedEvent, "purchase.completed");
             _logger.LogInformation("PurchaseCompletedEvent published for Purchase ID: {PurchaseId}", purchase.Id);
 
             return purchase.ToResponse(wallet.Balance);
@@ -122,7 +119,6 @@ public class PurchaseApplicationService(
                 purchase.Items.Select(i => i.GameId).ToList()
             );
 
-            _messageBus.Publish(refundCompletedEvent, "purchase.refunded");
             _logger.LogInformation("RefundCompletedEvent published for Purchase ID: {PurchaseId}", purchase.Id);
             
             return new RefundResponse
