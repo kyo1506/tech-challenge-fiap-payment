@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.DTOs.Commands;
+using Shared.DTOs.Responses;
 using System.Text;
 using System.Text.Json;
 
@@ -36,7 +37,8 @@ public class WalletCommandsHandler(
                 {
                     QueueUrl = _queueUrl,
                     MaxNumberOfMessages = 10,
-                    WaitTimeSeconds = 20
+                    WaitTimeSeconds = 20,
+                    MessageAttributeNames = new List<string> { "All" }
                 };
                 var response = await _sqsClient.ReceiveMessageAsync(receiveRequest, cancellationToken);
 
@@ -70,20 +72,35 @@ public class WalletCommandsHandler(
 
         using var scope = _scopeFactory.CreateScope();
         var walletService = scope.ServiceProvider.GetRequiredService<IWalletApplicationService>();
+        TransactionResponse? transactionResult = null;
 
         switch (commandType)
         {
             case "create-deposit":
                 var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload, options);
-                if (depositCmd != null) await walletService.CreateDepositAsync(depositCmd);
+                if (depositCmd != null)
+                    transactionResult = await walletService.CreateDepositAsync(depositCmd);
                 break;
             case "create-withdraw":
                 var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload, options);
-                if (withdrawCmd != null) await walletService.CreateWithdrawalAsync(withdrawCmd);
+                if (withdrawCmd != null)
+                    transactionResult = await walletService.CreateWithdrawalAsync(withdrawCmd);
                 break;
             default:
                 _logger.LogWarning("Unsupported command type '{CommandType}' in Wallet queue. Message will be discarded.", commandType);
                 break;
+        }
+
+        message.MessageAttributes.TryGetValue("ReplyTo", out var replyToAttr);
+        message.MessageAttributes.TryGetValue("CorrelationId", out var correlationIdAttr);
+
+        if (transactionResult != null && replyToAttr != null && correlationIdAttr != null)
+        {
+            await SendRpcReplyAsync(replyToAttr.StringValue, correlationIdAttr.StringValue, transactionResult);
+        }
+        else
+        {
+            _logger.LogInformation("Command {CommandType} processed without RPC reply (ReplyTo or CorrelationId attribute was missing).", commandType);
         }
     }
 
@@ -96,4 +113,20 @@ public class WalletCommandsHandler(
     public void Dispose() { }
 
     private class CommandEnvelope { public string CommandType { get; set; } public JsonElement? Payload { get; set; } }
+
+    private async Task SendRpcReplyAsync(string replyToQueue, string correlationId, object responseData)
+    {
+        _logger.LogInformation("Sending RPC reply with CorrelationId {CorrelationId} to queue: {ReplyQueue}", correlationId, replyToQueue);
+
+        var sendMessageRequest = new SendMessageRequest
+        {
+            QueueUrl = replyToQueue,
+            MessageBody = JsonSerializer.Serialize(responseData),
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>
+                {
+                    { "CorrelationId", new MessageAttributeValue { StringValue = correlationId, DataType = "String" } }
+                }
+        };
+        await _sqsClient.SendMessageAsync(sendMessageRequest);
+    }
 }
