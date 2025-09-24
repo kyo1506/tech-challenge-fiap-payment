@@ -27,7 +27,7 @@ public class PurchaseApplicationService(
     ILogger<PurchaseApplicationService> _logger) : IPurchaseApplicationService
 {
     private static readonly Random _random = new Random();
-    public async Task<PurchaseResponse> CreatePurchaseAsync(CreatePurchaseCommand command)
+    public async Task<Purchase> CreatePurchaseAsync(CreatePurchaseCommand command)
     {
         try
         {
@@ -69,7 +69,7 @@ public class PurchaseApplicationService(
 
             _logger.LogInformation("PurchaseCompletedEvent published for Purchase ID: {PurchaseId}", purchase.Id);
 
-            return purchase.ToResponse(wallet.Balance);
+            return purchase;
         }
         catch (InsufficientBalanceException ex)
         {

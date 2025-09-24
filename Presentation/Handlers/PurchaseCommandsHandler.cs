@@ -5,6 +5,7 @@ using Npgsql.Internal;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Shared.DTOs.Commands;
+using Shared.DTOs.Responses;
 using System.Text;
 using System.Text.Json;
 
@@ -36,7 +37,8 @@ public class PurchaseCommandsHandler(
                 {
                     QueueUrl = _queueUrl,
                     MaxNumberOfMessages = 10,
-                    WaitTimeSeconds = 20
+                    WaitTimeSeconds = 20,
+                    MessageAttributeNames = new List<string> { "All" }
                 };
                 var response = await _sqsClient.ReceiveMessageAsync(receiveRequest, cancellationToken);
 
@@ -56,6 +58,14 @@ public class PurchaseCommandsHandler(
 
     private async Task ProcessMessageAsync(Message message, JsonSerializerOptions options)
     {
+        message.MessageAttributes.TryGetValue("ReplyTo", out var replyToAttr);
+        message.MessageAttributes.TryGetValue("CorrelationId", out var correlationIdAttr);
+
+        if (replyToAttr == null || correlationIdAttr == null)
+        {
+            throw new InvalidOperationException("Message is missing required RPC attributes (ReplyTo, CorrelationId).");
+        }
+
         var envelope = JsonSerializer.Deserialize<CommandEnvelope>(message.Body, options);
         var commandType = envelope?.CommandType;
         var payload = envelope?.Payload?.GetRawText();
@@ -70,20 +80,51 @@ public class PurchaseCommandsHandler(
 
         using var scope = _scopeFactory.CreateScope();
         var purchaseService = scope.ServiceProvider.GetRequiredService<IPurchaseApplicationService>();
-
+        Purchase purchaseResult = null;
+        RefundResponse refundResult = null;
         switch (commandType)
         {
             case "create-purchase":
                 var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload, options);
-                if (purchaseCmd != null) await purchaseService.CreatePurchaseAsync(purchaseCmd);
+                if (purchaseCmd != null)
+                    purchaseResult = await purchaseService.CreatePurchaseAsync(purchaseCmd);
                 break;
             case "create-refund":
                 var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload, options);
-                if (refundCmd != null) await purchaseService.CreateRefundAsync(refundCmd);
+                if (refundCmd != null)
+                    refundResult = await purchaseService.CreateRefundAsync(refundCmd);
                 break;
             default:
                 _logger.LogWarning("Unsupported command type '{CommandType}' in Purchase queue. Message will be discarded.", commandType);
-                break;
+                return;
+        }
+
+        if (purchaseResult != null)
+        {
+            var confirmation = new PurchaseConfirmationResponse
+            {
+                UserId = purchaseResult.UserId,
+                PaymentTransactionId = purchaseResult.Id,
+                Games = purchaseResult.Items.Select(item =>
+                {
+                    var originalCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload, options);
+                    var originalItem = originalCmd.Games.FirstOrDefault(g => g.GameId == item.GameId);
+                    return new PurchaseConfirmationItem
+                    {
+                        GameId = item.GameId,
+                        Price = item.OriginalPrice,
+                        Discount = item.DiscountPercentage,
+                        PromotionId = originalCmd.Games.FirstOrDefault(g => g.GameId == item.GameId)?.PromotionId,
+                        HistoryPaymentId = originalItem?.HistoryPaymentId ?? Guid.Empty
+                    };
+                }).ToList()
+            };
+
+            await SendRpcReplyAsync(replyToAttr.StringValue, correlationIdAttr.StringValue, confirmation);
+        }
+        else if (refundResult != null)
+        {
+            await SendRpcReplyAsync(replyToAttr.StringValue, correlationIdAttr.StringValue, refundResult);
         }
     }
 
@@ -96,4 +137,20 @@ public class PurchaseCommandsHandler(
     public void Dispose() { }
 
     private class CommandEnvelope { public string CommandType { get; set; } public JsonElement? Payload { get; set; } }
+
+    private async Task SendRpcReplyAsync(string replyToQueue, string correlationId, object responseData)
+    {
+        _logger.LogInformation("Sending RPC reply with CorrelationId {CorrelationId} to queue: {ReplyQueue}", correlationId, replyToQueue);
+
+        var sendMessageRequest = new SendMessageRequest
+        {
+            QueueUrl = replyToQueue,
+            MessageBody = JsonSerializer.Serialize(responseData),
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>
+        {
+            { "CorrelationId", new MessageAttributeValue { StringValue = correlationId, DataType = "String" } }
+        }
+        };
+        await _sqsClient.SendMessageAsync(sendMessageRequest);
+    }
 }

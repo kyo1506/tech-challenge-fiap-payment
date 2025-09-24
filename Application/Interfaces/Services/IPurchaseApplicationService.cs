@@ -10,6 +10,6 @@ namespace Application.Interfaces.Services;
 
 public interface IPurchaseApplicationService
 {
-    Task<PurchaseResponse> CreatePurchaseAsync(CreatePurchaseCommand command);
+    Task<Purchase> CreatePurchaseAsync(CreatePurchaseCommand command);
     Task<RefundResponse> CreateRefundAsync(CreateRefundCommand command);
 }
