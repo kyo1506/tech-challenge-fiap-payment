@@ -48,6 +48,11 @@ public class PurchaseCommandsHandler(
                     await _sqsClient.DeleteMessageAsync(_queueUrl, message.ReceiptHandle, cancellationToken);
                 }
             }
+            catch (AmazonSQSException sqsEx)
+            {
+                _logger.LogError(sqsEx, "An AWS SQS error occurred. Error Code: {ErrorCode}, AWS Request ID: {RequestId}", sqsEx.ErrorCode, sqsEx.RequestId);
+                await Task.Delay(5000, cancellationToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error polling Purchase SQS queue. Waiting 5 seconds before retry.");

@@ -10,8 +10,9 @@ using Infrastructure.Data.Repositories;
 using Infrastructure.MessageBus;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Presentation.Handlers;
-using RabbitMQ.Client;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,18 @@ builder.Services.AddDefaultAWSOptions(awsOptions);
 
 builder.Services.AddDbContext<EventStoreDbContext>(options =>
     options.UseNpgsql(connectionString));
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(
+        serviceName: "PaymentService"))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddAWSInstrumentation()    
+        .AddOtlpExporter(otlpOptions =>
+        {
+            otlpOptions.Endpoint = new Uri("http://localhost:4317");
+        }));
+
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(new ConfigurationBuilder()
@@ -39,15 +52,9 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "PaymentService API", Version = "v1" });
 });
 
-var factory = new ConnectionFactory { HostName = builder.Configuration["MessageBus:Host"], DispatchConsumersAsync = true };
-builder.Services.AddSingleton(factory.CreateConnection());
-builder.Services.AddHostedService<WalletCommandsHandler>();
-builder.Services.AddHostedService<PurchaseCommandsHandler>();
-
 builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
 builder.Services.AddAWSService<IAmazonSQS>();
 
-builder.Services.Configure<RabbitMQConfig>(builder.Configuration.GetSection("MessageBus"));
 builder.Services.AddSingleton<IMessageBusClient, SnsMessageBusClient>(); 
 builder.Services.AddHostedService<WalletCommandsHandler>();
 builder.Services.AddHostedService<PurchaseCommandsHandler>();

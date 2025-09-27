@@ -5,25 +5,13 @@ services:
     container_name: payment-db-postgres
     environment:
       - POSTGRES_DB=payment_service_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=masterkey 
+      - POSTGRES_USER=POSTGRES_USER
+      - POSTGRES_PASSWORD=POSTGRES_PASS
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: always
-   
-  message-broker:
-    image: rabbitmq:3-management
-    container_name: payment-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq/
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.9.2
     container_name: payment-elasticsearch
@@ -44,25 +32,31 @@ services:
       - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" 
     depends_on:
       - elasticsearch
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: payment-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
   payment-service:
     image: payment-service 
     build: .
     depends_on:
       - payment-db
-      - message-broker
       - elasticsearch
     environment:
-      - ConnectionStrings__DefaultConnection=Host=payment-db;Port=5432;Database=payment_service_db;Username=postgres;Password=masterkey
-      
-      - MessageBus__Host=message-broker
-      - MessageBus__Username=guest
-      - MessageBus__Password=guest
-
+      - connectionstrings__defaultconnection=host=DB_CONNECTION_STIRNG
       - Serilog__WriteTo__1__Args__nodeUris=http://elasticsearch:9200
+
+      - AWS_REGION=sa-east-1
+      - AWS_ACCESS_KEY_ID=USER_KEY
+      - AWS_SECRET_ACCESS_KEY=USER_SECRET
+      
+      - AWS:SnsTopicArn=arn:TOPIC_ARN
+      - AWS:WalletCommandQueueUrl=WALLET_QUEUE
+      - AWS:PurchaseCommandQueueUrl=PURCHASE_QUEUE
     ports:
-      # Mapeia a porta 8000 do seu PC para a porta 8080 do contêiner (HTTP)
       - "8000:8080" 
-      # Mapeia a porta 8001 do seu PC para a porta 443 do contêiner (HTTPS)
       - "8001:443" 
     restart: always
 volumes:
