@@ -80,4 +80,9 @@ public class UserWallet
 
         Raise(new PurchasePaymentMade(Id, purchaseId, amount));
     }
+
+    public void ClearUncommittedEvents()
+    {
+        _uncommittedEvents.Clear();
+    }
 }

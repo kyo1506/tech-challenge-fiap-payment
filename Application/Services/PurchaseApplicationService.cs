@@ -60,7 +60,8 @@ public class PurchaseApplicationService(
             _logger.LogInformation("Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
             await _unitOfWork.SaveChangesAsync();
-
+            purchase.ClearUncommittedEvents();
+            wallet.ClearUncommittedEvents();
             var purchaseCompletedEvent = new PurchaseCompletedEvent(
                 purchase.Id,
                 purchase.UserId,
@@ -113,6 +114,8 @@ public class PurchaseApplicationService(
             await _unitOfWork.SaveChangesAsync();
             _logger.LogInformation("Refund for Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
+            purchase.ClearUncommittedEvents();
+            wallet.ClearUncommittedEvents();
             var refundCompletedEvent = new RefundCompletedEvent(
                 purchase.Id,
                 purchase.UserId,
