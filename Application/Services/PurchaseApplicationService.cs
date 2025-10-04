@@ -26,8 +26,7 @@ public class PurchaseApplicationService(
     IEventStoreUnitOfWork _unitOfWork,
     ILogger<PurchaseApplicationService> _logger) : IPurchaseApplicationService
 {
-    private static readonly Random _random = new Random();
-    public async Task<Purchase> CreatePurchaseAsync(CreatePurchaseCommand command)
+    public async Task<PurchaseResponse> CreatePurchaseAsync(CreatePurchaseCommand command)
     {
         try
         {
@@ -37,7 +36,8 @@ public class PurchaseApplicationService(
             {
                 GameId = itemCmd.GameId,
                 OriginalPrice = itemCmd.Price,
-                DiscountPercentage = itemCmd.Discount
+                DiscountPercentage = itemCmd.Discount,
+                PromotionId = itemCmd.PromotionId
             }).ToList();
 
             var purchase = new Purchase(command.UserId, purchaseItems);
@@ -60,16 +60,29 @@ public class PurchaseApplicationService(
             _logger.LogInformation("Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
             await _unitOfWork.SaveChangesAsync();
-
-            var purchaseCompletedEvent = new PurchaseCompletedEvent(
-                purchase.Id,
-                purchase.UserId,
-                purchase.Items.Select(i => i.GameId).ToList()
-            );
-
+            purchase.ClearUncommittedEvents();
+            wallet.ClearUncommittedEvents();
+            var response = new PurchaseResponse
+            {
+                UserId = purchase.UserId,
+                PaymentTransactionId = purchase.Id,
+                Games = purchase.Items.Select(item =>
+                {
+                    var originalItemCmd = command.Games.FirstOrDefault(c => c.GameId == item.GameId);
+                    return new PurchaseItemResponse
+                    {
+                        GameId = item.GameId,
+                        Price = item.OriginalPrice,
+                        Discount = item.DiscountPercentage,
+                        PromotionId = item.PromotionId,
+                        HistoryPaymentId = originalItemCmd?.HistoryPaymentId ?? Guid.Empty
+                    };
+                }).ToList()
+            };
+            
             _logger.LogInformation("PurchaseCompletedEvent published for Purchase ID: {PurchaseId}", purchase.Id);
 
-            return purchase;
+            return response;
         }
         catch (InsufficientBalanceException ex)
         {
@@ -113,6 +126,8 @@ public class PurchaseApplicationService(
             await _unitOfWork.SaveChangesAsync();
             _logger.LogInformation("Refund for Purchase {PurchaseId} and Wallet {WalletId} state successfully saved to database.", purchase.Id, wallet.Id);
 
+            purchase.ClearUncommittedEvents();
+            wallet.ClearUncommittedEvents();
             var refundCompletedEvent = new RefundCompletedEvent(
                 purchase.Id,
                 purchase.UserId,

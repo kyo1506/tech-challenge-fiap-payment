@@ -8,8 +8,9 @@ namespace Shared.DTOs.Responses;
 
 public class PurchaseItemResponse
 {
-    public Guid HistoryPaymentId { get; set; }
     public Guid GameId { get; set; }
-    public string GameName { get; set; }
-    public decimal PricePaid { get; set; }
+    public decimal Price { get; set; }
+    public Guid? PromotionId { get; set; }
+    public decimal? Discount { get; set; }
+    public Guid HistoryPaymentId { get; set; }
 }

@@ -1,0 +1,188 @@
+using Amazon.Lambda.Core;
+using Amazon.Lambda.SQSEvents;
+using Amazon.SimpleNotificationService;
+using Amazon.SQS;
+using Amazon.SQS.Model;
+using Application.Interfaces.Event;
+using Application.Interfaces.RabbitMQ;
+using Application.Interfaces.Services;
+using Application.Services;
+using Domain.Interfaces.Repositories;
+using Infrastructure.Data.EventSourcing;
+using Infrastructure.Data.Repositories;
+using Infrastructure.MessageBus;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Shared.DTOs.Commands;
+using System;
+using System.Text.Json;
+
+
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
+namespace PaymentService.Processor;
+
+public class Function
+{
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<Function> _logger;
+    public Function()
+    {
+        var services = new ServiceCollection();
+        ConfigureServices(services);
+        _serviceProvider = services.BuildServiceProvider();
+        _logger = _serviceProvider.GetRequiredService<ILogger<Function>>();
+    }
+
+
+    public async Task FunctionHandler(SQSEvent evnt, ILambdaContext context)
+    {
+        try
+        {
+            _logger.LogInformation($"Processing {evnt.Records.Count} messages...");
+
+            foreach (var message in evnt.Records)
+            {
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    try
+                    {
+                        await ProcessMessageAsync(message, scope.ServiceProvider);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to process message with ID: {MessageId}. Message will return to queue.", message.MessageId);
+                        throw;
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+
+            throw;
+        }
+    }
+
+    private async Task ProcessMessageAsync(
+        SQSEvent.SQSMessage message,
+        IServiceProvider serviceProvider)
+    {
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        _logger.LogInformation("Processing message body: {MessageBody}", message.Body);
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<CommandEnvelope>(message.Body, options);
+            var commandType = envelope?.CommandType;
+            var payload = envelope?.Payload?.GetRawText();
+
+            if (string.IsNullOrEmpty(commandType) || string.IsNullOrEmpty(payload))
+            {
+                _logger.LogWarning("Invalid message format. Discarding message.");
+                return;
+            }
+            object? result = null;
+            switch (commandType)
+            {
+                case "CreateDeposit":
+                    var walletService = serviceProvider.GetRequiredService<IWalletApplicationService>();
+                    var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload);
+                    if (depositCmd != null)
+                        result = await walletService.CreateDepositAsync(depositCmd);
+                    break;
+                case "CreateWithdrawal":
+                    var walletServiceWithdraw = serviceProvider.GetRequiredService<IWalletApplicationService>();
+                    var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload);
+                    if (withdrawCmd != null)
+                        result = await walletServiceWithdraw.CreateWithdrawalAsync(withdrawCmd);
+                    break;
+                case "CreatePurchase":
+                    var purchaseService = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
+                    var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload);
+                    if (purchaseCmd != null)
+                        result = await purchaseService.CreatePurchaseAsync(purchaseCmd);
+                    break;
+                case "CreateRefund":
+                    var purchaseServiceRefund = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
+                    var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload);
+                    if (refundCmd != null)
+                        result = await purchaseServiceRefund.CreateRefundAsync(refundCmd);
+                    break;
+                default:
+                    _logger.LogWarning($"Unsupported command type '{commandType}'. Message will be discarded.");
+                    break;
+            }
+
+            message.MessageAttributes.TryGetValue("ReplyTo", out var replyToAttr);
+            message.MessageAttributes.TryGetValue("CorrelationId", out var correlationIdAttr);
+
+            if (result != null && replyToAttr != null && correlationIdAttr != null)
+            {
+                var sqsClient = serviceProvider.GetRequiredService<IAmazonSQS>();
+                await SendRpcReplyAsync(sqsClient, replyToAttr.StringValue, correlationIdAttr.StringValue, result);
+            }
+            else
+            {
+                _logger.LogInformation("Command {CommandType} processed without RPC reply (attributes missing or no result).", commandType);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error processing message: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task SendRpcReplyAsync(IAmazonSQS sqsClient, string replyToQueue, string correlationId, object responseData)
+    {
+        _logger.LogInformation("Sending RPC reply with CorrelationId {CorrelationId} to queue: {ReplyQueue}", correlationId, replyToQueue);
+
+        var sendMessageRequest = new SendMessageRequest
+        {
+            QueueUrl = replyToQueue,
+            MessageBody = JsonSerializer.Serialize(responseData),
+            MessageAttributes = new Dictionary<string, MessageAttributeValue>
+            {
+                { "CorrelationId", new MessageAttributeValue { StringValue = correlationId, DataType = "String" } }
+            }
+        };
+        await sqsClient.SendMessageAsync(sendMessageRequest);
+    }
+
+    private void ConfigureServices(IServiceCollection services)
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: false)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        services.AddSingleton<IConfiguration>(configuration);
+
+        services.AddLogging(builder =>
+        {
+            builder.AddLambdaLogger();
+        });
+
+        services.AddDbContext<EventStoreDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+        services.AddScoped<IEventStoreUnitOfWork, EventStoreUnitOfWork>();
+
+        services.AddDefaultAWSOptions(configuration.GetAWSOptions());
+        services.AddAWSService<IAmazonSimpleNotificationService>();
+        services.AddAWSService<IAmazonSQS>();
+
+        services.AddSingleton<IMessageBusClient, SnsMessageBusClient>();
+        services.AddScoped<IWalletRepository, EfWalletRepository>();
+        services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();
+        services.AddScoped<IWalletApplicationService, WalletApplicationService>();
+        services.AddScoped<IPurchaseApplicationService, PurchaseApplicationService>();
+    }
+    private class CommandEnvelope { public string? CommandType { get; set; } public JsonElement? Payload { get; set; } }
+
+}

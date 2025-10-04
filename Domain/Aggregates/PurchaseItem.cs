@@ -4,6 +4,7 @@ public class PurchaseItem
     public Guid GameId { get; set; }
     public decimal OriginalPrice { get; set; }
     public decimal? DiscountPercentage { get; set; }
+    public Guid? PromotionId { get; set; }
     public decimal FinalPrice => CalculateFinalPrice();
 
     private decimal CalculateFinalPrice()

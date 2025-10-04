@@ -22,37 +22,46 @@ public abstract class GenericEventSourcedRepository<T> where T : class
 
     protected async Task<T?> LoadAsync(Guid streamId)
     {
-        var storedEvents = await _context.Events
+        try
+        {
+            var storedEvents = await _context.Events
             .Where(e => e.StreamId == streamId)
             .OrderBy(e => e.Version)
             .ToListAsync();
 
-        if (!storedEvents.Any())
-        {
-            return null;
-        }
-
-        var domainEvents = storedEvents.Select(se =>
-        {
-
-            Type eventType = se.EventType switch
+            if (!storedEvents.Any())
             {
-                nameof(WalletCreated) => typeof(WalletCreated),
-                nameof(FundsDeposited) => typeof(FundsDeposited),
-                nameof(FundsWithdrawn) => typeof(FundsWithdrawn),
-                nameof(PurchasePaymentMade) => typeof(PurchasePaymentMade),
-                nameof(WalletCreditedForPurchaseRefund) => typeof(WalletCreditedForPurchaseRefund),
-                nameof(PurchaseCreated) => typeof(PurchaseCreated),
-                nameof(PurchaseCompleted) => typeof(PurchaseCompleted),
-                nameof(PurchaseRefunded) => typeof(PurchaseRefunded),
-                _ => throw new NotSupportedException($"Event type '{se.EventType}' is not supported.")
-            };
-            return JsonSerializer.Deserialize(se.Data, eventType, _serializerOptions);
-        }).ToList();
+                return null;
+            }
 
-        var aggregate = (T)Activator.CreateInstance(typeof(T), new object[] { domainEvents });
+            var domainEvents = storedEvents.Select(se =>
+            {
 
-        return aggregate;
+                Type eventType = se.EventType switch
+                {
+                    nameof(WalletCreated) => typeof(WalletCreated),
+                    nameof(FundsDeposited) => typeof(FundsDeposited),
+                    nameof(FundsWithdrawn) => typeof(FundsWithdrawn),
+                    nameof(PurchasePaymentMade) => typeof(PurchasePaymentMade),
+                    nameof(WalletCreditedForPurchaseRefund) => typeof(WalletCreditedForPurchaseRefund),
+                    nameof(PurchaseCreated) => typeof(PurchaseCreated),
+                    nameof(PurchaseCompleted) => typeof(PurchaseCompleted),
+                    nameof(PurchaseRefunded) => typeof(PurchaseRefunded),
+                    _ => throw new NotSupportedException($"Event type '{se.EventType}' is not supported.")
+                };
+                return JsonSerializer.Deserialize(se.Data, eventType, _serializerOptions);
+            }).ToList();
+
+            var aggregate = (T)Activator.CreateInstance(typeof(T), new object[] { domainEvents });
+
+            return aggregate;
+        }
+        catch (Exception e)
+        {
+
+            throw;
+        }
+        
     }
 
     protected async Task StoreAsync(dynamic aggregate)

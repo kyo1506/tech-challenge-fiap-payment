@@ -80,4 +80,9 @@ public class Purchase
     private void Apply(PurchaseCompleted e) => Status = EPurchaseStatus.Completed;
     private void Apply(PurchaseFailed e) => Status = EPurchaseStatus.Failed;
     private void Apply(PurchaseRefunded e) => Status = EPurchaseStatus.Refunded;
+
+    public void ClearUncommittedEvents()
+    {
+        _uncommittedEvents.Clear();
+    }
 }

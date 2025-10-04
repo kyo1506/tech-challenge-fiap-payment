@@ -25,9 +25,8 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release
       
-    # - name: Test
-    #   run: dotnet test --no-build --configuration Release
-    # TODO: Quando você criar um projeto de testes, descomente a linha acima.
+    - name: test
+      run: dotnet test --no-build --configuration release
 
   build-and-push-docker:
     needs: build-and-test
