@@ -45,6 +45,8 @@ public class WalletApplicationService(
             await _walletRepository.StoreAsync(wallet);
             await _unitOfWork.SaveChangesAsync();
 
+            wallet.ClearUncommittedEvents();
+
             _logger.LogInformation("Deposit for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
 
             var depositEvent = new FundsDepositedEvent(command.UserId, command.Amount);
@@ -84,6 +86,8 @@ public class WalletApplicationService(
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("Withdrawal for User ID: {UserId} saved successfully. Balance changed from {OldBalance} to {NewBalance}", command.UserId, oldBalance, wallet.Balance);
+
+            wallet.ClearUncommittedEvents();
 
             var withdrawalEvent = new FundsWithdrawnEvent(command.UserId, command.Amount);
 

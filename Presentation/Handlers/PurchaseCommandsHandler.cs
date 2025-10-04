@@ -1,12 +1,8 @@
 ﻿using Amazon.SQS;
 using Amazon.SQS.Model;
 using Application.Interfaces.Services;
-using Npgsql.Internal;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 using Shared.DTOs.Commands;
 using Shared.DTOs.Responses;
-using System.Text;
 using System.Text.Json;
 
 namespace Presentation.Handlers;
@@ -85,7 +81,7 @@ public class PurchaseCommandsHandler(
 
         using var scope = _scopeFactory.CreateScope();
         var purchaseService = scope.ServiceProvider.GetRequiredService<IPurchaseApplicationService>();
-        Purchase purchaseResult = null;
+        PurchaseResponse purchaseResult = null;
         RefundResponse refundResult = null;
         switch (commandType)
         {
@@ -109,16 +105,16 @@ public class PurchaseCommandsHandler(
             var confirmation = new PurchaseConfirmationResponse
             {
                 UserId = purchaseResult.UserId,
-                PaymentTransactionId = purchaseResult.Id,
-                Games = purchaseResult.Items.Select(item =>
+                PaymentTransactionId = purchaseResult.PaymentTransactionId,
+                Games = purchaseResult.Games.Select(item =>
                 {
                     var originalCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload, options);
                     var originalItem = originalCmd.Games.FirstOrDefault(g => g.GameId == item.GameId);
-                    return new PurchaseConfirmationItem
+                    return new PurchaseItemResponse
                     {
                         GameId = item.GameId,
-                        Price = item.OriginalPrice,
-                        Discount = item.DiscountPercentage,
+                        Price = item.Price,
+                        Discount = item.Discount,
                         PromotionId = originalCmd.Games.FirstOrDefault(g => g.GameId == item.GameId)?.PromotionId,
                         HistoryPaymentId = originalItem?.HistoryPaymentId ?? Guid.Empty
                     };

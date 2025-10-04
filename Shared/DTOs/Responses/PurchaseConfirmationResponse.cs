@@ -10,5 +10,5 @@ public class PurchaseConfirmationResponse
 {
     public Guid UserId { get; set; }
     public Guid PaymentTransactionId { get; set; } 
-    public List<PurchaseConfirmationItem> Games { get; set; } = new();
+    public List<PurchaseItemResponse> Games { get; set; } = new();
 }

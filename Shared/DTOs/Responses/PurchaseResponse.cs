@@ -8,13 +8,7 @@ namespace Shared.DTOs.Responses;
 
 public class PurchaseResponse
 {
-    public Guid PurchaseId { get; set; }
-
-    public string Status { get; set; }
-
-    public decimal TotalPrice { get; set; }
-
-    public decimal NewBalance { get; set; }
-
-    public List<PurchaseItemResponse> Items { get; set; }
+    public Guid UserId { get; set; }
+    public Guid PaymentTransactionId { get; set; }
+    public List<PurchaseItemResponse> Games{ get; set; } = new();
 }

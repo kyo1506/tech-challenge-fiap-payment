@@ -15,14 +15,12 @@ public static class PurchaseMapper
     {
         return new PurchaseResponse
         {
-            PurchaseId = purchase.Id,
-            Status = purchase.Status.ToString(),
-            TotalPrice = purchase.TotalPrice,
-            NewBalance = newBalance, 
-            Items = purchase.Items.Select(item => new PurchaseItemResponse
+            UserId = purchase.UserId,
+            PaymentTransactionId = purchase.Id,
+            Games = purchase.Items.Select(item => new PurchaseItemResponse
             {
                 GameId = item.GameId,
-                PricePaid = item.FinalPrice
+                Price = item.FinalPrice
             }).ToList()
         };
     }
