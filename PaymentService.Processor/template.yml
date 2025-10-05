@@ -69,7 +69,7 @@ Resources:
         - SNSPublishMessagePolicy:
             TopicName: payment-topic 
         - SQSSendMessagePolicy:
-            QueueName: my-test-reply-queue 
+            QueueName: !Ref ReplyQueueName
         - VPCAccessPolicy: {}
   
       Environment:
@@ -79,7 +79,9 @@ Resources:
           AWS__SnsTopicArn: !Ref SnsTopicArn
           AWS__WalletCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${WalletQueueArn}" 
           AWS__PurchaseCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${PurchaseQueueArn}"
-          
+          AWS__ReplyQueueName: !Ref ReplyQueueName
+
+
           Serilog__Using__0: "Serilog.Sinks.Console"
           Serilog__Using__1: "Serilog.Sinks.Elasticsearch"
           Serilog__Using__2: "Serilog.Enrichers.Environment"

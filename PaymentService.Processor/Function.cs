@@ -31,12 +31,14 @@ public class Function
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<Function> _logger;
+    private readonly IConfiguration _configuration;
     public Function()
     {
         var services = new ServiceCollection();
             ConfigureServices(services);
             _serviceProvider = services.BuildServiceProvider();
             _logger = _serviceProvider.GetRequiredService<ILogger<Function>>();
+            _configuration = _serviceProvider.GetRequiredService<IConfiguration>();
     }
 
 
@@ -123,13 +125,19 @@ public class Function
                     break;
             }
 
-            message.MessageAttributes.TryGetValue("ReplyTo", out var replyToAttr);
-            message.MessageAttributes.TryGetValue("CorrelationId", out var correlationIdAttr);
-
-            if (result != null && replyToAttr != null && correlationIdAttr != null)
+            if (result != null)
             {
                 var sqsClient = serviceProvider.GetRequiredService<IAmazonSQS>();
-                await SendRpcReplyAsync(sqsClient, replyToAttr.StringValue, correlationIdAttr.StringValue, result);
+                var replyQueueName = _configuration["AWS:ReplyQueueName"];
+
+                if (string.IsNullOrWhiteSpace(replyQueueName))
+                {
+                    _logger.LogWarning("ReplyQueueName is not configured. Skipping RPC reply.");
+                    return;
+                }
+                var queueUrlResponse = await sqsClient.GetQueueUrlAsync(replyQueueName);
+
+                await SendRpcReplyAsync(sqsClient, queueUrlResponse.QueueUrl, result);
             }
             else
             {
@@ -143,20 +151,16 @@ public class Function
         }
     }
 
-    private async Task SendRpcReplyAsync(IAmazonSQS sqsClient, string replyToQueue, string correlationId, object responseData)
+    private async Task SendRpcReplyAsync(IAmazonSQS sqsClient, string replyToQueue, object result)
     {
-        _logger.LogInformation("Sending RPC reply with CorrelationId {CorrelationId} to queue: {ReplyQueue}", correlationId, replyToQueue);
+        _logger.LogInformation("Sending RPC reply to queue: {ReplyQueue}", replyToQueue);
 
-        var sendMessageRequest = new SendMessageRequest
+        var responseMessage = JsonSerializer.Serialize(result);
+        await sqsClient.SendMessageAsync(new SendMessageRequest
         {
             QueueUrl = replyToQueue,
-            MessageBody = JsonSerializer.Serialize(responseData),
-            MessageAttributes = new Dictionary<string, MessageAttributeValue>
-            {
-                { "CorrelationId", new MessageAttributeValue { StringValue = correlationId, DataType = "String" } }
-            }
-        };
-        await sqsClient.SendMessageAsync(sendMessageRequest);
+            MessageBody = responseMessage
+        });
     }
 
     private void ConfigureServices(IServiceCollection services)
