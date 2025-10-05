@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  PaymentService.Processor
+  Processa comandos de pagamento recebidos via SQS para os contextos de Wallet e Purchase.
+
+Parameters:
+  RdsHost:
+    Type: String
+    Description: O endpoint do banco de dados RDS.
+  RdsPassword:
+    Type: String
+    Description: A senha do banco de dados RDS.
+    NoEcho: true 
+  SnsTopicArn:
+    Type: String
+    Description: O ARN do tópico SNS para publicar eventos.
+  WalletQueueArn:
+    Type: String
+    Description: O ARN da fila SQS de comandos da carteira.
+  PurchaseQueueArn:
+    Type: String
+    Description: O ARN da fila SQS de comandos de compra.
+  ReplyQueueName:
+    Type: String
+    Description: O nome da fila SQS para respostas RPC.
+
+Globals:
+  Function:
+    Timeout: 30 
+    MemorySize: 512 
+
+Resources:
+  PaymentProcessorFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      Handler: PaymentService.Processor::PaymentService.Processor.Function::FunctionHandler
+      Runtime: dotnet8
+      CodeUri: . 
+
+      Events:
+        WalletQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !Ref WalletQueueArn 
+            BatchSize: 10 
+            Enabled: true
+
+        PurchaseQueueTrigger:
+          Type: SQS
+          Properties:
+            Queue: !Ref PurchaseQueueArn 
+            BatchSize: 10
+            Enabled: true
+      
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: wallet-queue 
+        - SQSPollerPolicy:
+            QueueName: purchase-queue 
+            
+        - SNSPublishMessagePolicy:
+            TopicName: payment-topic 
+        - SQSSendMessagePolicy:
+            QueueName: my-test-reply-queue 
+        - VPCAccessPolicy: {}
+  
+      Environment:
+        Variables:
+          ConnectionStrings__DefaultConnection: !Sub "Host=${RdsHost};Port=5432;Database=postgres;Username=postgres;Password=${RdsPassword}"
+          AWS__Region: "sa-east-1"
+          AWS__SnsTopicArn: !Ref SnsTopicArn
+          AWS__WalletCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${WalletQueueArn}" 
+          AWS__PurchaseCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${PurchaseQueueArn}"
