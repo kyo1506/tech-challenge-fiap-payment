@@ -135,6 +135,8 @@ public class Function
                     _logger.LogWarning("ReplyQueueName is not configured. Skipping RPC reply.");
                     return;
                 }
+                _logger.LogInformation("Attempting to get SQS URL for queue: {QueueName}", replyQueueName);
+
                 var queueUrlResponse = await sqsClient.GetQueueUrlAsync(replyQueueName);
 
                 await SendRpcReplyAsync(sqsClient, queueUrlResponse.QueueUrl, result);
