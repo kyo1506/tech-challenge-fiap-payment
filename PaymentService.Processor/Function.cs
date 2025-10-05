@@ -7,6 +7,7 @@ using Application.Interfaces.Event;
 using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
 using Application.Services;
+using Domain.Exceptions;
 using Domain.Interfaces.Repositories;
 using Infrastructure.Data.EventSourcing;
 using Infrastructure.Data.Repositories;
@@ -15,6 +16,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Trace;
+using Serilog;
 using Shared.DTOs.Commands;
 using System;
 using System.Text.Json;
@@ -31,9 +34,9 @@ public class Function
     public Function()
     {
         var services = new ServiceCollection();
-        ConfigureServices(services);
-        _serviceProvider = services.BuildServiceProvider();
-        _logger = _serviceProvider.GetRequiredService<ILogger<Function>>();
+            ConfigureServices(services);
+            _serviceProvider = services.BuildServiceProvider();
+            _logger = _serviceProvider.GetRequiredService<ILogger<Function>>();
     }
 
 
@@ -50,6 +53,10 @@ public class Function
                     try
                     {
                         await ProcessMessageAsync(message, scope.ServiceProvider);
+                    }
+                    catch (DomainException ex)
+                    {
+                        _logger.LogWarning(ex, "Business rule violation while processing message ID {MessageId}: {ErrorMessage}", message.MessageId, ex.Message);
                     }
                     catch (Exception ex)
                     {
@@ -87,25 +94,25 @@ public class Function
             object? result = null;
             switch (commandType)
             {
-                case "CreateDeposit":
+                case "create-deposit":
                     var walletService = serviceProvider.GetRequiredService<IWalletApplicationService>();
                     var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload);
                     if (depositCmd != null)
                         result = await walletService.CreateDepositAsync(depositCmd);
                     break;
-                case "CreateWithdrawal":
+                case "create-withdraw":
                     var walletServiceWithdraw = serviceProvider.GetRequiredService<IWalletApplicationService>();
                     var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload);
                     if (withdrawCmd != null)
                         result = await walletServiceWithdraw.CreateWithdrawalAsync(withdrawCmd);
                     break;
-                case "CreatePurchase":
+                case "create-purchase":
                     var purchaseService = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
                     var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload);
                     if (purchaseCmd != null)
                         result = await purchaseService.CreatePurchaseAsync(purchaseCmd);
                     break;
-                case "CreateRefund":
+                case "create-refund":
                     var purchaseServiceRefund = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
                     var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload);
                     if (refundCmd != null)
@@ -162,10 +169,14 @@ public class Function
             .Build();
 
         services.AddSingleton<IConfiguration>(configuration);
-
+        var logger = new LoggerConfiguration()
+           .ReadFrom.Configuration(configuration)
+           .CreateLogger();
         services.AddLogging(builder =>
         {
             builder.AddLambdaLogger();
+            //builder.ClearProviders(); 
+            //builder.AddSerilog(logger, dispose: true);
         });
 
         services.AddDbContext<EventStoreDbContext>(options =>
@@ -183,6 +194,8 @@ public class Function
         services.AddScoped<IWalletApplicationService, WalletApplicationService>();
         services.AddScoped<IPurchaseApplicationService, PurchaseApplicationService>();
     }
-    private class CommandEnvelope { public string? CommandType { get; set; } public JsonElement? Payload { get; set; } }
+    private class CommandEnvelope { 
+        public string? CommandType { get; set; } public JsonElement? Payload { get; set; } 
+    }
 
 }
