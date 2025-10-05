@@ -91,6 +91,7 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Build Lambda package
+        working-directory: ./tech-challenge-fiap-payment
         run: sam build --template PaymentService.Processor/template.yaml --use-container
 
       - name: Deploy Lambda with SAM
