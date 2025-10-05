@@ -9,5 +9,5 @@ using System.Threading.Tasks;
 namespace Shared.DTOs.Commands;
 
 public record CreateRefundCommand(
-    [property: JsonPropertyName("purchaseId")] [Required] Guid PurchaseId,
-    [property: JsonPropertyName("reason")] string? Reason);
+    [property: JsonPropertyName("UserId")] [Required] Guid UserId,
+    [property: JsonPropertyName("PaymentTransactionId")] Guid PaymentTransactionId);

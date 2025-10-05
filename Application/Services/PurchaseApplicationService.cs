@@ -100,19 +100,19 @@ public class PurchaseApplicationService(
     {
         try
         {
-            _logger.LogInformation("Starting refund process for Purchase ID: {PurchaseId}", command.PurchaseId);
+            _logger.LogInformation("Starting refund process for Purchase ID: {PurchaseId}", command.PaymentTransactionId);
 
-            var purchase = await _purchaseRepository.GetByIdAsync(command.PurchaseId);
+            var purchase = await _purchaseRepository.GetByIdAsync(command.PaymentTransactionId);
             if (purchase == null)
             {
-                _logger.LogWarning("Refund failed: Purchase with ID {PurchaseId} not found.", command.PurchaseId);
-                throw new NotFoundException($"Purchase with ID {command.PurchaseId} not found.");
+                _logger.LogWarning("Refund failed: Purchase with ID {PurchaseId} not found.", command.PaymentTransactionId);
+                throw new NotFoundException($"Purchase with ID {command.PaymentTransactionId} not found.");
             }
 
             var wallet = await _walletRepository.GetByUserIdAsync(purchase.UserId);
             if (wallet == null)
             {
-                _logger.LogWarning("Refund failed: Wallet for User ID {UserId} associated with Purchase ID {PurchaseId} not found.", purchase.UserId, command.PurchaseId);
+                _logger.LogWarning("Refund failed: Wallet for User ID {UserId} associated with Purchase ID {PurchaseId} not found.", purchase.UserId, command.PaymentTransactionId);
                 throw new NotFoundException($"Wallet for user {purchase.UserId} not found.");
             }
 
@@ -138,19 +138,18 @@ public class PurchaseApplicationService(
             
             return new RefundResponse
             {
-                PurchaseId = purchase.Id,
-                RefundAmount = purchase.TotalPrice,
-                NewBalance = wallet.Balance
+                UserId = command.UserId,
+                PaymentTransactionId = command.PaymentTransactionId
             };
         }
         catch (DomainException ex)
         {
-            _logger.LogWarning(ex, "Refund failed for Purchase ID {PurchaseId} due to a business rule violation.", command.PurchaseId);
+            _logger.LogWarning(ex, "Refund failed for Purchase ID {PurchaseId} due to a business rule violation.", command.PaymentTransactionId);
             throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Critical failure during refund process for Purchase ID: {PurchaseId}", command.PurchaseId);
+            _logger.LogError(ex, "Critical failure during refund process for Purchase ID: {PurchaseId}", command.PaymentTransactionId);
             throw;
         }
     }

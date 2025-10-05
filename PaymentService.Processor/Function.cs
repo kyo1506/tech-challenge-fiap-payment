@@ -125,7 +125,7 @@ public class Function
                     break;
             }
 
-            if (result != null)
+            if (result != null && (commandType == "create-purchase" || commandType == "create-refund"))
             {
                 var sqsClient = serviceProvider.GetRequiredService<IAmazonSQS>();
                 var replyQueueName = _configuration["AWS:ReplyQueueName"];
