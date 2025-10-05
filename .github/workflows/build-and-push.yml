@@ -112,6 +112,6 @@ jobs:
               ParameterKey=SnsTopicArn,ParameterValue=${{ secrets.SNS_TOPIC_ARN }} \
               ParameterKey=WalletQueueArn,ParameterValue=${{ secrets.WALLET_QUEUE_ARN }} \
               ParameterKey=PurchaseQueueArn,ParameterValue=${{ secrets.PURCHASE_QUEUE_ARN }} \
-              ParameterKey=ReplyQueueName,ParameterValue=${{ secrets.REPLY_QUEUE_NAME }}
+              ParameterKey=ReplyQueueName,ParameterValue=${{ secrets.REPLY_QUEUE_NAME }} \
               ParameterKey=ElasticUrl,ParameterValue=${{ secrets.ELASTIC_URL }} \
               ParameterKey=ElasticApiKey,ParameterValue=${{ secrets.ELASTIC_API_KEY }}
