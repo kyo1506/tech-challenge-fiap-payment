@@ -98,25 +98,25 @@ public class Function
             {
                 case "create-deposit":
                     var walletService = serviceProvider.GetRequiredService<IWalletApplicationService>();
-                    var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload);
+                    var depositCmd = JsonSerializer.Deserialize<CreateDepositCommand>(payload, options);
                     if (depositCmd != null)
                         result = await walletService.CreateDepositAsync(depositCmd);
                     break;
                 case "create-withdraw":
                     var walletServiceWithdraw = serviceProvider.GetRequiredService<IWalletApplicationService>();
-                    var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload);
+                    var withdrawCmd = JsonSerializer.Deserialize<CreateWithdrawalCommand>(payload, options);
                     if (withdrawCmd != null)
                         result = await walletServiceWithdraw.CreateWithdrawalAsync(withdrawCmd);
                     break;
                 case "create-purchase":
                     var purchaseService = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
-                    var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload);
+                    var purchaseCmd = JsonSerializer.Deserialize<CreatePurchaseCommand>(payload, options);
                     if (purchaseCmd != null)
                         result = await purchaseService.CreatePurchaseAsync(purchaseCmd);
                     break;
                 case "create-refund":
                     var purchaseServiceRefund = serviceProvider.GetRequiredService<IPurchaseApplicationService>();
-                    var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload);
+                    var refundCmd = JsonSerializer.Deserialize<CreateRefundCommand>(payload, options);
                     if (refundCmd != null)
                         result = await purchaseServiceRefund.CreateRefundAsync(refundCmd);
                     break;
