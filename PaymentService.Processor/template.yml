@@ -69,7 +69,7 @@ Resources:
         - SNSPublishMessagePolicy:
             TopicName: payment-topic 
         - SQSSendMessagePolicy:
-            QueueName: !Ref ReplyQueueName
+            QueueName: catalog-events-queue
         - VPCAccessPolicy: {}
   
       Environment:
