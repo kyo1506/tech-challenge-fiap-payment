@@ -153,14 +153,15 @@ public class Function
 
     private async Task SendRpcReplyAsync(IAmazonSQS sqsClient, string replyToQueue, object result)
     {
-        _logger.LogInformation("Sending RPC reply to queue: {ReplyQueue}", replyToQueue);
+        _logger.LogWarning("Sending RPC reply to queue: {ReplyQueue}", replyToQueue);
 
         var responseMessage = JsonSerializer.Serialize(result);
-        await sqsClient.SendMessageAsync(new SendMessageRequest
+        var sendRequest = new SendMessageRequest
         {
             QueueUrl = replyToQueue,
             MessageBody = responseMessage
-        });
+        };
+        await sqsClient.SendMessageAsync(sendRequest);
     }
 
     private void ConfigureServices(IServiceCollection services)
