@@ -91,7 +91,7 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Build Lambda package
-        run: sam build
+        run: sam build --template PaymentService.Processor/template.yml
 
 
       - name: Deploy Lambda with SAM
