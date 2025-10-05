@@ -12,5 +12,5 @@ public class RefundResponse
 
     public Guid PaymentTransactionId { get; set; }
 
-    public string CommandType { get; set; }
+    public string CommandType { get; set; } = "create-refund";
 }
