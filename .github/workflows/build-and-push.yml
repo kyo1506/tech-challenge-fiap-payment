@@ -91,13 +91,13 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Build Lambda package
-        run: sam build --template tech-challenge-fiap-payment/PaymentService.Processor/template.yaml --use-container
+        run: sam build
 
 
       - name: Deploy Lambda with SAM
         run: >
           sam deploy 
-          --template tech-challenge-fiap-payment/PaymentService.Processor/.aws-sam/build/template.yaml 
+          --template .aws-sam/build/template.yaml 
           --stack-name payment-service-stack 
           --s3-bucket ${{ env.SAM_S3_BUCKET }} 
           --capabilities CAPABILITY_IAM 

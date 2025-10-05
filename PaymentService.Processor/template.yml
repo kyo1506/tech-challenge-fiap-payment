@@ -36,7 +36,7 @@ Resources:
     Properties:
       Handler: PaymentService.Processor::PaymentService.Processor.Function::FunctionHandler
       Runtime: dotnet8
-      CodeUri: . 
+      CodeUri: PaymentService.Processor/  
 
       Events:
         WalletQueueTrigger:
