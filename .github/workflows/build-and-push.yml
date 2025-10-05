@@ -98,18 +98,18 @@ jobs:
         run: sam build --template PaymentService.Processor/template.yml
       
       - name: Deploy Lambda with SAM
-        run: >
-          sam deploy 
-          --template .aws-sam/build/template.yaml 
-          --stack-name payment-service-stack 
-          --s3-bucket ${{ env.SAM_S3_BUCKET }} 
-          --capabilities CAPABILITY_IAM 
-          --region ${{ env.AWS_REGION }}
-          --no-confirm-changeset
-          --parameter-overrides 
-            ParameterKey=RdsHost,ParameterValue=${{ secrets.RDS_HOST }} 
-            ParameterKey=RdsPassword,ParameterValue=${{ secrets.RDS_PASSWORD }} 
-            ParameterKey=SnsTopicArn,ParameterValue=${{ secrets.SNS_TOPIC_ARN }}
-            ParameterKey=WalletQueueArn,ParameterValue=${{ secrets.WALLET_QUEUE_ARN }}
-            ParameterKey=PurchaseQueueArn,ParameterValue=${{ secrets.PURCHASE_QUEUE_ARN }}
-            ParameterKey=ReplyQueueName,ParameterValue=${{ secrets.REPLY_QUEUE_NAME }}
+        run: |
+          sam deploy \
+            --template .aws-sam/build/template.yaml \
+            --stack-name payment-service-stack \
+            --s3-bucket ${{ env.SAM_S3_BUCKET }} \
+            --capabilities CAPABILITY_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --no-confirm-changeset \
+            --parameter-overrides \
+              ParameterKey=RdsHost,ParameterValue=${{ secrets.RDS_HOST }} \
+              ParameterKey=RdsPassword,ParameterValue=${{ secrets.RDS_PASSWORD }} \
+              ParameterKey=SnsTopicArn,ParameterValue=${{ secrets.SNS_TOPIC_ARN }} \
+              ParameterKey=WalletQueueArn,ParameterValue=${{ secrets.WALLET_QUEUE_ARN }} \
+              ParameterKey=PurchaseQueueArn,ParameterValue=${{ secrets.PURCHASE_QUEUE_ARN }} \
+              ParameterKey=ReplyQueueName,ParameterValue=${{ secrets.REPLY_QUEUE_NAME }}
