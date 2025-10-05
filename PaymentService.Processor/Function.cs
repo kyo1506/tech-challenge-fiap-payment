@@ -162,9 +162,9 @@ public class Function
     private void ConfigureServices(IServiceCollection services)
     {
         var configuration = new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: false)
-            .AddJsonFile("appsettings.Development.json", optional: true)
+            //.SetBasePath(Directory.GetCurrentDirectory())
+            //.AddJsonFile("appsettings.json", optional: false)
+            //.AddJsonFile("appsettings.Development.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -174,9 +174,9 @@ public class Function
            .CreateLogger();
         services.AddLogging(builder =>
         {
-            builder.AddLambdaLogger();
-            //builder.ClearProviders(); 
-            //builder.AddSerilog(logger, dispose: true);
+            //builder.AddLambdaLogger();
+            builder.ClearProviders();
+            builder.AddSerilog(logger, dispose: true);
         });
 
         services.AddDbContext<EventStoreDbContext>(options =>

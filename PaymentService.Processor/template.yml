@@ -24,6 +24,13 @@ Parameters:
   ReplyQueueName:
     Type: String
     Description: O nome da fila SQS para respostas RPC.
+  ElasticUrl:
+    Type: String
+    Description: URL do cluster Elasticsearch.
+  ElasticApiKey:
+    Type: String
+    Description: Chave de API do Elasticsearch.
+    NoEcho: true
 
 Globals:
   Function:
@@ -72,3 +79,22 @@ Resources:
           AWS__SnsTopicArn: !Ref SnsTopicArn
           AWS__WalletCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${WalletQueueArn}" 
           AWS__PurchaseCommandQueueUrl: !Sub "https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/${PurchaseQueueArn}"
+          
+          Serilog__Using__0: "Serilog.Sinks.Console"
+          Serilog__Using__1: "Serilog.Sinks.Elasticsearch"
+          Serilog__Using__2: "Serilog.Enrichers.Environment"
+          Serilog__Using__3: "Serilog.Enrichers.Thread"
+          
+          Serilog__MinimumLevel__Default: "Information"
+          Serilog__MinimumLevel__Override__Microsoft: "Warning"
+
+          Serilog__WriteTo__0__Name: "Console"
+          Serilog__WriteTo__1__Name: "Elasticsearch"
+          Serilog__WriteTo__1__Args__nodeUris: !Ref ElasticUrl
+          Serilog__WriteTo__1__Args__indexFormat: "paymentservice-logs-{0:yyyy.MM.dd}"
+          Serilog__WriteTo__1__Args__autoRegisterTemplate: "true"
+          Serilog__WriteTo__1__Args__apiKey: !Ref ElasticApiKey
+
+          Serilog__Enrich__0: "FromLogContext"
+          Serilog__Enrich__1: "WithMachineName"
+          Serilog__Enrich__2: "WithThreadId"
