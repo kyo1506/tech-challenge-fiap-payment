@@ -8,9 +8,9 @@ namespace Shared.DTOs.Responses;
 
 public class RefundResponse
 {
-    public Guid PurchaseId { get; set; }
+    public Guid UserId { get; set; }
 
-    public decimal RefundAmount { get; set; }
+    public Guid PaymentTransactionId { get; set; }
 
-    public decimal NewBalance { get; set; }
+    public string CommandType { get; set; }
 }
