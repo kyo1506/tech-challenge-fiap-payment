@@ -69,16 +69,14 @@ Resources:
         - SNSPublishMessagePolicy:
             TopicName: payment-topic 
 
-        - PolicyName: SqsCatalogEventsQueuePolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - "sqs:SendMessage"
-                  - "sqs:GetQueueUrl"
-                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:catalog-events-queue"
-
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - "sqs:SendMessage"
+                - "sqs:GetQueueUrl"
+              Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:catalog-events-queue"
+         
         - VPCAccessPolicy: {}
   
       Environment:
