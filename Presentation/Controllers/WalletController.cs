@@ -1,6 +1,8 @@
 ﻿using Application.Interfaces.Services;
 using Domain.Exceptions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Presentation.Middleware;
 using Shared.DTOs.Responses;
 
 namespace Presentation.Controllers;
@@ -16,6 +18,14 @@ public class WalletController(
     {
         try
         {
+            if (!HttpContext.IsAuthenticated())
+            {
+                _logger.LogWarning("Tentativa de acesso sem JWT válido");
+                return Unauthorized(
+                    new { Message = "Token JWT válido é obrigatório para gerenciar usuários" }
+                );
+            }
+
             var response = await _walletService.GetBalanceAsync(userId);
             return Ok(response);
         }
@@ -35,6 +45,14 @@ public class WalletController(
     {
         try
         {
+            if (!HttpContext.IsAuthenticated())
+            {
+                _logger.LogWarning("Tentativa de acesso sem JWT válido");
+                return Unauthorized(
+                    new { Message = "Token JWT válido é obrigatório para gerenciar usuários" }
+                );
+            }
+
             var response = await _walletService.GetTransactionHistoryAsync(userId);
             return Ok(response);
         }
