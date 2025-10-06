@@ -9,6 +9,6 @@ namespace Shared.DTOs.Responses;
 public class BalanceResponse
 {
     public Guid UserId { get; set; }
-    public decimal Balance { get; set; }
+    public string Balance { get; set; }
 
 }

@@ -18,6 +18,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Trace;
 using Serilog;
+using Serilog.Context;
+using Serilog.Sinks.Elasticsearch;
 using Shared.DTOs.Commands;
 using System;
 using System.Text.Json;
@@ -50,23 +52,30 @@ public class Function
 
             foreach (var message in evnt.Records)
             {
-                using (var scope = _serviceProvider.CreateScope())
+                var correlationId = GetOrCreateCorrelationId(message);
+
+                using (LogContext.PushProperty("X-Correlation-ID", correlationId))
                 {
-                    try
+                    _logger.LogInformation("Starting processing for message ID {MessageId}", message.MessageId);
+
+                    using (var scope = _serviceProvider.CreateScope())
                     {
-                        await ProcessMessageAsync(message, scope.ServiceProvider);
-                    }
-                    catch (DomainException ex)
-                    {
-                        _logger.LogWarning(ex, "Business rule violation while processing message ID {MessageId}: {ErrorMessage}", message.MessageId, ex.Message);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to process message with ID: {MessageId}. Message will return to queue.", message.MessageId);
-                        throw;
+                        try
+                        {
+                            await ProcessMessageAsync(message, scope.ServiceProvider);
+                        }
+                        catch (DomainException ex)
+                        {
+                            _logger.LogWarning(ex, "Business rule violation while processing message ID {MessageId}: {ErrorMessage}", message.MessageId, ex.Message);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to process message with ID: {MessageId}. Message will return to queue.", message.MessageId);
+                            throw;
+                        }
                     }
                 }
-            }
+            }                
         }
         catch (Exception e)
         {
@@ -169,19 +178,31 @@ public class Function
     private void ConfigureServices(IServiceCollection services)
     {
         var configuration = new ConfigurationBuilder()
-            //.SetBasePath(Directory.GetCurrentDirectory())
-            //.AddJsonFile("appsettings.json", optional: false)
-            //.AddJsonFile("appsettings.Development.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
         services.AddSingleton<IConfiguration>(configuration);
+
         var logger = new LoggerConfiguration()
-           .ReadFrom.Configuration(configuration)
-           .CreateLogger();
+        .ReadFrom.Configuration(configuration)
+        .Enrich.FromLogContext() 
+        .Enrich.WithMachineName()
+        .Enrich.WithProperty("ApplicationName", configuration["APPLICATION_NAME"] ?? "PaymentService.Processor")
+        .WriteTo.Console() 
+        .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(configuration["Elasticsearch:Uri"]))
+        {
+            IndexFormat = "fcg-logs-{0:yyyy.MM.dd}",
+            TypeName = null,
+            AutoRegisterTemplate = true,
+            ModifyConnectionSettings = x => x.ApiKeyAuthentication(
+                configuration["Elasticsearch:Id"],
+                configuration["Elasticsearch:ApiKey"]
+            )
+        })
+        .CreateLogger();
+
         services.AddLogging(builder =>
         {
-            //builder.AddLambdaLogger();
             builder.ClearProviders();
             builder.AddSerilog(logger, dispose: true);
         });
@@ -204,5 +225,13 @@ public class Function
     private class CommandEnvelope { 
         public string? CommandType { get; set; } public JsonElement? Payload { get; set; } 
     }
+    private string GetOrCreateCorrelationId(SQSEvent.SQSMessage message)
+    {
+        if (message.MessageAttributes.TryGetValue("CorrelationId", out var attribute) && !string.IsNullOrEmpty(attribute.StringValue))
+        {
+            return attribute.StringValue;
+        }
 
+        return Guid.NewGuid().ToString();
+    }
 }

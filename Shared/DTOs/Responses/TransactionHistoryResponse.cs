@@ -9,7 +9,7 @@ namespace Shared.DTOs.Responses;
 public class TransactionHistoryResponse
 {
     public Guid UserId { get; set; }
-    public decimal CurrentBalance { get; set; }
+    public string CurrentBalance { get; set; }
     public List<TransactionHistoryItem> History { get; set; } = new();
 }
 

@@ -18,7 +18,7 @@ public static class TransactionMapper
         return new BalanceResponse
         {
             UserId = wallet.Id,
-            Balance = wallet.Balance
+            Balance = wallet.Balance.ToString("F2")
         };
     }
 
@@ -51,7 +51,7 @@ public static class TransactionMapper
         return new TransactionHistoryResponse
         {
             UserId = userId,
-            CurrentBalance = currentBalance,
+            CurrentBalance = currentBalance.ToString("N2"),
             History = historyItems.OrderByDescending(x => x.Timestamp).ToList() 
         };
     }
