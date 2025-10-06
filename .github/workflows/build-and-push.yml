@@ -114,4 +114,5 @@ jobs:
               ParameterKey=PurchaseQueueArn,ParameterValue=${{ secrets.PURCHASE_QUEUE_ARN }} \
               ParameterKey=ReplyQueueName,ParameterValue=${{ secrets.REPLY_QUEUE_NAME }} \
               ParameterKey=ElasticUrl,ParameterValue=${{ secrets.ELASTIC_URL }} \
+              ParameterKey=ElasticId,ParameterValue=${{ secrets.ELASTIC_ID }} \
               ParameterKey=ElasticApiKey,ParameterValue=${{ secrets.ELASTIC_API_KEY }}
