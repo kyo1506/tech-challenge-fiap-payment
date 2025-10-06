@@ -27,6 +27,10 @@ Parameters:
   ElasticUrl:
     Type: String
     Description: URL do cluster Elasticsearch.
+  ElasticId: 
+    Type: String
+    Description: O ID da API Key do Elasticsearch.
+    NoEcho: true
   ElasticApiKey:
     Type: String
     Description: Chave de API do Elasticsearch.
