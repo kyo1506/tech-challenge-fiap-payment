@@ -1,0 +1,26 @@
+# Kong Ingress - Path-based Routing with Strip Path
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-api-ingress
+  namespace: tech-challenge-payment
+  annotations:
+    # Kong strip-path annotation - removes the prefix before forwarding
+    konghq.com/strip-path: "true"
+    # Kong plugins for this Ingress
+    konghq.com/plugins: payment-cors, payment-correlation-id, payment-rate-limiting
+spec:
+  # Use Kong Ingress Controller
+  ingressClassName: kong
+  rules:
+  - host: tech-challenge-payment.fcg-identity.com
+    http:
+      paths:
+      # Payment Service - External: /payment/* -> Internal: /*
+      - path: /payment
+        pathType: Prefix
+        backend:
+          service:
+            name: payment-api-service
+            port:
+              number: 80

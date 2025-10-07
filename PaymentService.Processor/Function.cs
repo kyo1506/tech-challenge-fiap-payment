@@ -4,7 +4,6 @@ using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Application.Interfaces.Event;
-using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
 using Application.Services;
 using Domain.Exceptions;

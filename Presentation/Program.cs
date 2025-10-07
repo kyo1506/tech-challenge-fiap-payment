@@ -17,7 +17,7 @@ using Microsoft.OpenApi.Models;
 using NewRelic.LogEnrichers.Serilog;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
-using Presentation.Middleware;
+using Presentation.Middlewares;
 using Serilog;
 using Serilog.Enrichers.CorrelationId;
 using Serilog.Sinks.Elasticsearch;

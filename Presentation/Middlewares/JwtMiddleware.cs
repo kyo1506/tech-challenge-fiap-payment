@@ -1,10 +1,15 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Serilog.Context;
-using System.Security.Claims;
 
-namespace Presentation.Middleware;
+namespace Presentation.Middlewares;
 
+/// <summary>
+/// Middleware híbrido que combina funcionalidades:
+/// 1. Enriquecimento de logs com contexto de requisição (como Identity)
+/// 2. Validação e autenticação JWT (como Games)
+/// 3. Suporte completo ao Kong Ingress Controller
+/// </summary>
 public class JwtMiddleware(
     RequestDelegate next,
     ILogger<JwtMiddleware> logger,
@@ -13,9 +18,9 @@ public class JwtMiddleware(
 {
     private readonly RequestDelegate _next = next;
     private readonly ILogger<JwtMiddleware> _logger = logger;
-    private readonly JwtSecurityTokenHandler _tokenHandler = new JwtSecurityTokenHandler();
-    private readonly string _expectedIssuer =
-        configuration["Jwt:Issuer"];
+    private readonly JwtSecurityTokenHandler _tokenHandler = new();
+    private readonly string? _expectedIssuer = configuration["Jwt:Issuer"];
+
     public async Task InvokeAsync(HttpContext context)
     {
         var requestId =

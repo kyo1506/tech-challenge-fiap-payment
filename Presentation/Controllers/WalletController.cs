@@ -3,7 +3,7 @@ using Application.Services;
 using Domain.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Presentation.Middleware;
+using Presentation.Middlewares;
 using Shared.DTOs.Requests;
 using Shared.DTOs.Responses;
 
