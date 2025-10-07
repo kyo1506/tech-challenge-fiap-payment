@@ -1,7 +1,7 @@
 using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Application.Interfaces.Event;
-using Application.Interfaces.RabbitMQ;
+using Application.Interfaces.MessageBus;
 using Application.Interfaces.Services;
 using Application.Services;
 using Domain.Interfaces.Repositories;
@@ -10,9 +10,11 @@ using Infrastructure.Data.Repositories;
 using Infrastructure.Logging;
 using Infrastructure.MessageBus;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using NewRelic.LogEnrichers.Serilog;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Presentation.Middleware;
@@ -21,6 +23,7 @@ using Serilog.Enrichers.CorrelationId;
 using Serilog.Sinks.Elasticsearch;
 using System.Collections.Specialized;
 using System.Text;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,24 +52,32 @@ Log.Logger = new LoggerConfiguration()
         .Build())
     .CreateBootstrapLogger();
 
-builder.Host.UseSerilog((context, services, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext()
-    .Enrich.WithMachineName()
-    .Enrich.WithProperty("X-Request-ID", context.HostingEnvironment.ApplicationName)
-    .WriteTo.Console()
-    .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(context.Configuration["Elasticsearch:Uri"]))
-    {
-        IndexFormat = "fcg-logs-{0:yyyy.MM.dd}",
-        TypeName = null,
-        AutoRegisterTemplate = true,
-        OverwriteTemplate = true,
-        NumberOfShards = 1,
-        NumberOfReplicas = 1,
-        ModifyConnectionSettings = x => x.ApiKeyAuthentication(context.Configuration["Elasticsearch:Id"], context.Configuration["Elasticsearch:ApiKey"])
-    })
-);
+builder.Host.UseSerilog(
+    (context, services, configuration) =>
+        configuration
+            .ReadFrom.Configuration(context.Configuration)
+            .ReadFrom.Services(services)
+            .Enrich.FromLogContext()
+            .Enrich.WithMachineName()
+            .Enrich.WithProperty("X-Correlation-ID", context.HostingEnvironment.ApplicationName)
+            .WriteTo.Console()
+            .WriteTo.Elasticsearch(
+                new ElasticsearchSinkOptions(new Uri(context.Configuration["Elasticsearch:Uri"]))
+                {
+                    IndexFormat = "fcg-logs-{0:yyyy.MM.dd}",
+                    TypeName = null,
+                    AutoRegisterTemplate = true,
+                    OverwriteTemplate = true,
+                    NumberOfShards = 1,
+                    NumberOfReplicas = 1,
+                    ModifyConnectionSettings = x =>
+                        x.ApiKeyAuthentication(
+                            context.Configuration["Elasticsearch:Id"],
+                            context.Configuration["Elasticsearch:ApiKey"]
+                        ),
+                }
+            )
+        );
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -76,9 +87,11 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddHttpContextAccessor();
-
+builder.Services.AddScoped<SqsCommandPublisher>();
 builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
 builder.Services.AddAWSService<IAmazonSQS>();
+
+builder.Services.AddScoped<ICommandPublisher, SqsCommandPublisher>();
 
 builder.Services.AddScoped<IWalletRepository, EfWalletRepository>();
 builder.Services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();
@@ -97,6 +110,10 @@ builder.Services.AddCors(options =>
                   .AllowAnyMethod();
         });
 });
+
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connectionString, name: "PostgreSQL");
+
 
 var app = builder.Build();
 
@@ -121,5 +138,32 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var options = new JsonSerializerOptions { WriteIndented = true };
+
+        var response = new
+        {
+            Status = report.Status.ToString(),
+            TotalDuration = report.TotalDuration.TotalMilliseconds,
+            Checks = report.Entries.Select(entry => new
+            {
+                Name = entry.Key,
+                Status = entry.Value.Status.ToString(),
+                entry.Value.Description,
+                Duration = entry.Value.Duration.TotalMilliseconds,
+                entry.Value.Data,
+            }),
+        };
+
+        await context.Response.WriteAsync(
+            JsonSerializer.Serialize(response, options)
+        );
+    },
+});
 
 app.Run();

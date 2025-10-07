@@ -1,5 +1,5 @@
 ﻿using Application.Interfaces.Event;
-using Application.Interfaces.RabbitMQ;
+using Application.Interfaces.MessageBus;
 using Application.Interfaces.Services;
 using Application.Mappers;
 using Domain.Aggregates;
@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using Shared.DTOs.Commands;
 using Shared.DTOs.Events;
+using Shared.DTOs.Requests;
 using Shared.DTOs.Responses;
 using System;
 using System.Collections.Generic;
@@ -24,7 +25,8 @@ namespace Application.Services;
 public class WalletApplicationService(
     IWalletRepository _walletRepository,
     IEventStoreUnitOfWork _unitOfWork,
-    ILogger<WalletApplicationService> _logger) : IWalletApplicationService
+    ILogger<WalletApplicationService> _logger,
+    ICommandPublisher _commandPublisher) : IWalletApplicationService
 {
 
     public async Task<TransactionResponse> CreateDepositAsync(CreateDepositCommand command)
@@ -138,5 +140,17 @@ public class WalletApplicationService(
 
         _logger.LogInformation("Transaction history with {EventCount} events found for User ID: {UserId}", historyEvents.Count, userId);
         return historyEvents.ToHistoryResponse(userId, wallet.Balance);
+    }
+
+    public async Task DepositAsync(decimal amount, Guid userId)
+    {
+        var command = new CreateDepositCommand(userId, amount);
+        await _commandPublisher.SendCommandAsync("create-deposit", command, "WalletCommandQueueUrl");
+    }
+
+    public async Task WithdrawAsync(decimal amount, Guid userId)
+    {
+        var command = new CreateWithdrawalCommand(userId, amount);
+        await _commandPublisher.SendCommandAsync("create-withdraw", command, "WalletCommandQueueUrl");
     }
 }

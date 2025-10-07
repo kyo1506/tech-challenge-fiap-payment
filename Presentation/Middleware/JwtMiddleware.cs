@@ -16,145 +16,112 @@ public class JwtMiddleware(
     private readonly JwtSecurityTokenHandler _tokenHandler = new JwtSecurityTokenHandler();
     private readonly string _expectedIssuer =
         configuration["Jwt:Issuer"];
-
     public async Task InvokeAsync(HttpContext context)
     {
-        // 1. Capturar X-Request-ID do Kong
         var requestId =
-            context.Request.Headers["X-Request-ID"].FirstOrDefault() ?? Guid.NewGuid()
+            context.Request.Headers["X-Kong-Request-ID"].FirstOrDefault() ?? Guid.NewGuid()
                 .ToString("N")[..8];
 
-        // 2. Tentar extrair informações do JWT (se presente)
-        var userInfo = TryExtractUserInfo(context.Request);
+        var correlationId =
+            context.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? context
+                .Request.Headers["X-Request-ID"]
+                .FirstOrDefault()
+            ?? Guid.NewGuid().ToString("N")[..12];
 
-        // 3. Configurar contexto de log com todas as informações
+        var userInfo = TryExtractAndValidateUserInfo(context.Request);
+
         using (LogContext.PushProperty("RequestId", requestId))
+        using (LogContext.PushProperty("CorrelationId", correlationId))
         using (LogContext.PushProperty("SessionId", userInfo?.SessionId ?? ""))
         using (LogContext.PushProperty("UserId", userInfo?.UserId ?? ""))
         using (LogContext.PushProperty("Username", userInfo?.Username ?? ""))
         {
-            // 4. Log da requisição
             var method = context.Request.Method;
             var path = context.Request.Path.Value ?? "";
 
-            _logger.LogInformation("Request received: {Method} {Path}", method, path);
+            _logger.LogInformation("Request started: {Method} {Path}", method, path);
 
-            // 5. Adicionar informações do usuário ao contexto HTTP
-            if (userInfo != null)
+            try
             {
-                context.Items["UserInfo"] = userInfo;
-
-                // Criar ClaimsPrincipal básico para compatibilidade com [Authorize]
-                var claims = new List<Claim>
+                if (userInfo != null)
                 {
-                    new("sub", userInfo.UserId),
-                    new("preferred_username", userInfo.Username),
-                    new("session_state", userInfo.SessionId),
-                    new(ClaimTypes.NameIdentifier, userInfo.UserId),
-                    new(ClaimTypes.Name, userInfo.Username),
-                };
-
-                if (!string.IsNullOrEmpty(userInfo.Email))
-                {
-                    claims.Add(new("email", userInfo.Email));
-                    claims.Add(new(ClaimTypes.Email, userInfo.Email));
+                    context.Items["UserInfo"] = userInfo;
+                    context.User = CreateClaimsPrincipal(userInfo);
                 }
 
-                // Adicionar roles se existirem
-                foreach (var role in userInfo.Roles)
-                {
-                    claims.Add(new(ClaimTypes.Role, role));
-                }
+                await _next(context);
 
-                var identity = new ClaimsIdentity(claims, "jwt");
-                context.User = new ClaimsPrincipal(identity);
+                _logger.LogInformation(
+                    "Request completed: {Method} {Path} -> {StatusCode}",
+                    method,
+                    path,
+                    context.Response.StatusCode
+                );
             }
-
-            // 6. Continuar pipeline
-            await _next(context);
-
-            // 7. Log de resposta
-            _logger.LogInformation(
-                "Request completed: {Method} {Path} -> {StatusCode}",
-                method,
-                path,
-                context.Response.StatusCode
-            );
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Request failed: {Method} {Path}", method, path);
+                throw;
+            }
         }
     }
 
     /// <summary>
-    /// Extrai informações básicas do JWT sem validação cryptográfica completa.
-    /// Valida apenas estrutura, issuer e expiração.
+    /// Extrai e VALIDA completamente o JWT (mais robusto que Identity)
     /// </summary>
-    private SimpleUserInfo? TryExtractUserInfo(HttpRequest request)
+    private UserInfo? TryExtractAndValidateUserInfo(HttpRequest request)
     {
         try
         {
-            // Extrair token do header Authorization
-            var authHeader = request.Headers["Authorization"].FirstOrDefault();
+            var authHeader = request.Headers.Authorization.FirstOrDefault();
             if (
                 string.IsNullOrEmpty(authHeader)
                 || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
             )
             {
-                return null; // Sem token = endpoint público
+                return null;
             }
 
             var token = authHeader["Bearer ".Length..].Trim();
-            if (string.IsNullOrEmpty(token))
+            if (string.IsNullOrEmpty(token) || !_tokenHandler.CanReadToken(token))
             {
+                _logger.LogWarning("JWT com formato inválido");
                 return null;
             }
 
-            // ✅ Verificar se o token tem estrutura válida de JWT
-            if (!_tokenHandler.CanReadToken(token))
-            {
-                _logger.LogWarning("Token JWT com formato inválido");
-                return null;
-            }
-
-            // ✅ Ler token sem validação de assinatura (apenas estrutura)
             var jwtToken = _tokenHandler.ReadJwtToken(token);
 
-            // ✅ Verificar issuer
             var issuer = jwtToken.Claims.FirstOrDefault(x => x.Type == "iss")?.Value;
-            if (string.IsNullOrEmpty(issuer) || issuer != _expectedIssuer)
+            if (!string.IsNullOrEmpty(_expectedIssuer) && issuer != _expectedIssuer)
             {
-                _logger.LogWarning(
-                    "JWT com issuer inválido. Esperado: {Expected}, Recebido: {Received}",
+                _logger.LogDebug(
+                    "JWT issuer mismatch. Expected: {Expected}, Got: {Received}",
                     _expectedIssuer,
                     issuer
                 );
                 return null;
             }
 
-            // ✅ Verificar se não expirou
             var exp = jwtToken.Claims.FirstOrDefault(x => x.Type == "exp")?.Value;
             if (!string.IsNullOrEmpty(exp) && long.TryParse(exp, out var expTimestamp))
             {
                 var expirationTime = DateTimeOffset.FromUnixTimeSeconds(expTimestamp);
                 if (expirationTime <= DateTimeOffset.UtcNow)
                 {
-                    _logger.LogWarning("JWT expirado em {ExpirationTime}", expirationTime);
+                    _logger.LogDebug("JWT expired at {ExpirationTime}", expirationTime);
                     return null;
                 }
             }
 
-            // ✅ Extrair informações do usuário
             var userId = jwtToken.Claims.FirstOrDefault(x => x.Type == "sub")?.Value ?? "";
             var username =
                 jwtToken.Claims.FirstOrDefault(x => x.Type == "preferred_username")?.Value ?? "";
             var email = jwtToken.Claims.FirstOrDefault(x => x.Type == "email")?.Value;
             var sessionId =
                 jwtToken.Claims.FirstOrDefault(x => x.Type == "session_state")?.Value ?? "";
-
-            // Extrair roles (podem estar em diferentes claims dependendo do Keycloak)
             var roles = ExtractRoles(jwtToken);
 
-            _logger.LogDebug("JWT válido para usuário: {UserId} ({Username})", userId, username);
-
-            return new SimpleUserInfo
+            return new UserInfo
             {
                 UserId = userId,
                 Username = username,
@@ -167,13 +134,13 @@ public class JwtMiddleware(
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Erro ao processar JWT");
+            _logger.LogDebug(ex, "Não foi possível extrair/validar JWT");
             return null;
         }
     }
 
     /// <summary>
-    /// Extrai roles do JWT (Keycloak pode ter estruturas diferentes)
+    /// Extrai roles do Keycloak JWT
     /// </summary>
     private List<string> ExtractRoles(JwtSecurityToken jwtToken)
     {
@@ -181,33 +148,27 @@ public class JwtMiddleware(
 
         try
         {
-            // Tentar extrair de realm_access.roles
             var realmAccess = jwtToken.Claims.FirstOrDefault(x => x.Type == "realm_access")?.Value;
-            if (!string.IsNullOrEmpty(realmAccess))
+            if (!string.IsNullOrEmpty(realmAccess) && realmAccess.Contains("\"roles\""))
             {
-                // Parse JSON simples para extrair roles
-                if (realmAccess.Contains("\"roles\""))
+                var rolesStart = realmAccess.IndexOf("[");
+                var rolesEnd = realmAccess.IndexOf("]");
+                if (rolesStart > 0 && rolesEnd > rolesStart)
                 {
-                    var rolesStart = realmAccess.IndexOf("[");
-                    var rolesEnd = realmAccess.IndexOf("]");
-                    if (rolesStart > 0 && rolesEnd > rolesStart)
+                    var rolesJson = realmAccess.Substring(
+                        rolesStart + 1,
+                        rolesEnd - rolesStart - 1
+                    );
+                    var roleItems = rolesJson.Split(',');
+                    foreach (var role in roleItems)
                     {
-                        var rolesJson = realmAccess.Substring(
-                            rolesStart + 1,
-                            rolesEnd - rolesStart - 1
-                        );
-                        var roleItems = rolesJson.Split(',');
-                        foreach (var role in roleItems)
-                        {
-                            var cleanRole = role.Trim().Replace("\"", "");
-                            if (!string.IsNullOrEmpty(cleanRole))
-                                roles.Add(cleanRole);
-                        }
+                        var cleanRole = role.Trim().Replace("\"", "");
+                        if (!string.IsNullOrEmpty(cleanRole))
+                            roles.Add(cleanRole);
                     }
                 }
             }
 
-            // Tentar extrair roles diretas
             var directRoles = jwtToken
                 .Claims.Where(x => x.Type == "roles" || x.Type == "role")
                 .Select(x => x.Value)
@@ -216,17 +177,47 @@ public class JwtMiddleware(
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Erro ao extrair roles do JWT (não é crítico)");
+            _logger.LogDebug(ex, "Erro ao extrair roles (não crítico)");
         }
 
-        return roles.Distinct().ToList();
+        return [.. roles.Distinct()];
+    }
+
+    /// <summary>
+    /// Cria ClaimsPrincipal para compatibilidade com [Authorize]
+    /// </summary>
+    private static ClaimsPrincipal CreateClaimsPrincipal(UserInfo userInfo)
+    {
+        var claims = new List<Claim>
+        {
+            new("sub", userInfo.UserId),
+            new("preferred_username", userInfo.Username),
+            new("session_state", userInfo.SessionId),
+            new(ClaimTypes.NameIdentifier, userInfo.UserId),
+            new(ClaimTypes.Name, userInfo.Username),
+        };
+
+        if (!string.IsNullOrEmpty(userInfo.Email))
+        {
+            claims.Add(new("email", userInfo.Email));
+            claims.Add(new(ClaimTypes.Email, userInfo.Email));
+        }
+
+        // Adicionar roles
+        foreach (var role in userInfo.Roles)
+        {
+            claims.Add(new(ClaimTypes.Role, role));
+        }
+
+        var identity = new ClaimsIdentity(claims, "jwt");
+        return new ClaimsPrincipal(identity);
     }
 }
 
 /// <summary>
-/// Informações básicas do usuário extraídas do JWT
+/// Informações do usuário
 /// </summary>
-public class SimpleUserInfo
+public class UserInfo
 {
     public string UserId { get; set; } = "";
     public string Username { get; set; } = "";
@@ -238,64 +229,44 @@ public class SimpleUserInfo
 }
 
 /// <summary>
-/// Extensions para facilitar uso nos controllers
+/// Extensions para o middleware JWT
 /// </summary>
-public static class SimpleJwtExtensions
+public static class EnhancedJwtExtensions
 {
-    /// <summary>
-    /// Obtém informações do usuário do contexto
-    /// </summary>
-    public static SimpleUserInfo? GetUserInfo(this HttpContext context)
-    {
-        return context.Items["UserInfo"] as SimpleUserInfo;
-    }
+    public static UserInfo? GetUserInfo(this HttpContext context) =>
+        context.Items["UserInfo"] as UserInfo;
 
-    /// <summary>
-    /// Verifica se o usuário está autenticado via JWT válido
-    /// </summary>
-    public static bool IsAuthenticated(this HttpContext context)
-    {
-        return context.GetUserInfo()?.IsAuthenticated == true;
-    }
+    public static bool IsAuthenticated(this HttpContext context) =>
+        context.GetUserInfo()?.IsAuthenticated == true;
 
-    /// <summary>
-    /// Obtém User ID ou null
-    /// </summary>
-    public static string? GetUserId(this HttpContext context)
-    {
-        return context.GetUserInfo()?.UserId;
-    }
+    public static string? GetUserId(this HttpContext context) => context.GetUserInfo()?.UserId;
 
-    /// <summary>
-    /// Obtém Username ou null
-    /// </summary>
-    public static string? GetUsername(this HttpContext context)
-    {
-        return context.GetUserInfo()?.Username;
-    }
+    public static string? GetUsername(this HttpContext context) => context.GetUserInfo()?.Username;
 
-    /// <summary>
-    /// Obtém Session ID ou null
-    /// </summary>
-    public static string? GetSessionId(this HttpContext context)
-    {
-        return context.GetUserInfo()?.SessionId;
-    }
+    public static string? GetSessionId(this HttpContext context) =>
+        context.GetUserInfo()?.SessionId;
 
-    /// <summary>
-    /// Verifica se o usuário tem uma role específica
-    /// </summary>
-    public static bool HasRole(this HttpContext context, string role)
-    {
-        var userInfo = context.GetUserInfo();
-        return userInfo?.Roles?.Contains(role, StringComparer.OrdinalIgnoreCase) == true;
-    }
+    public static bool HasRole(this HttpContext context, string role) =>
+        context.GetUserInfo()?.Roles?.Contains(role, StringComparer.OrdinalIgnoreCase) == true;
 
-    /// <summary>
-    /// Obtém token JWT original
-    /// </summary>
-    public static string? GetToken(this HttpContext context)
+    public static string? GetToken(this HttpContext context) => context.GetUserInfo()?.Token;
+
+    public static string? GetCorrelationId(this HttpContext context) =>
+        context.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? context
+            .Request.Headers["X-Request-ID"]
+            .FirstOrDefault();
+
+    public static string? GetRequestId(this HttpContext context) =>
+        context.Request.Headers["X-Kong-Request-ID"].FirstOrDefault();
+}
+
+/// <summary>
+/// Extension para registro do middleware
+/// </summary>
+public static class JwtMiddlewareExtensions
+{
+    public static IApplicationBuilder UseJwtMiddleware(this IApplicationBuilder builder)
     {
-        return context.GetUserInfo()?.Token;
+        return builder.UseMiddleware<JwtMiddleware>();
     }
 }

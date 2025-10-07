@@ -216,7 +216,6 @@ public class Function
         services.AddAWSService<IAmazonSimpleNotificationService>();
         services.AddAWSService<IAmazonSQS>();
 
-        services.AddSingleton<IMessageBusClient, SnsMessageBusClient>();
         services.AddScoped<IWalletRepository, EfWalletRepository>();
         services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();
         services.AddScoped<IWalletApplicationService, WalletApplicationService>();
