@@ -1,0 +1,75 @@
+
+# Payment API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: tech-challenge-payment
+  labels:
+    app: payment-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-api
+  template:
+    metadata:
+      labels:
+        app: payment-api
+    spec:
+      containers:
+      - name: payment-api
+        image: 208452488125.dkr.ecr.sa-east-1.amazonaws.com/tech-challenge-fiap-payment:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+          name: http
+        envFrom:
+        - configMapRef:
+            name: payment-api-config
+        - secretRef:
+            name: payment-api-secrets
+        env:
+        # New Relic Configuration
+        - name: NEW_RELIC_LICENSE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: newrelic-secrets
+              key: license-key
+        - name: NEW_RELIC_APP_NAME
+          value: "tech-challenge-payment-api"
+        - name: CORECLR_ENABLE_PROFILING
+          value: "1"
+        - name: CORECLR_PROFILER
+          value: "{36032161-FFC0-4B61-B559-F6C5D41BAE5A}"
+        - name: CORECLR_NEWRELIC_HOME
+          value: "/usr/local/newrelic"
+        - name: CORECLR_PROFILER_PATH
+          value: "/usr/local/newrelic/libNewRelicProfiler.so"
+        - name: NEW_RELIC_DISTRIBUTED_TRACING_ENABLED
+          value: "true"
+        - name: NEW_RELIC_LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          successThreshold: 1
+          failureThreshold: 3

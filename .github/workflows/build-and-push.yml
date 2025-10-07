@@ -1,17 +1,21 @@
-name: CI/CD - Build, Test, and Deploy Payment Service
+name: Payment Service - CI/CD Pipeline
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+
 env:
   AWS_REGION: sa-east-1
-  ECR_REPOSITORY_API: payment-service-api
+  ECR_REPOSITORY: payment-service-api
+  EKS_CLUSTER_NAME: fcg-identity
   SAM_S3_BUCKET: ${{ secrets.SAM_S3_BUCKET }}
 
 jobs:
   build-and-test:
+    name: Build and Test Payment Service
     runs-on: ubuntu-latest
 
     steps:
@@ -24,15 +28,15 @@ jobs:
         dotnet-version: 8.0.x
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore TechChallengeFIAP.Payment.sln
 
     - name: Build
-      run: dotnet build --no-restore --configuration Release
+      run: dotnet build TechChallengeFIAP.Payment.sln --no-restore --configuration Release
       
-    - name: test
-      run: dotnet test --no-build --configuration release
+    - name: Run tests
+      run: dotnet test --no-build --configuration Release --verbosity normal
 
-  deploy-query-api:
+  deploy-api:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -47,7 +51,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }} # Secret com o ARN da sua Role de deploy
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -60,16 +65,53 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_API:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY_API:$IMAGE_TAG
-          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY_API:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Configure Kubectl for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to EKS
+        run: |
+          # Substituir placeholder da imagem no deployment
+          sed -i 's|208452488125.dkr.ecr.sa-east-1.amazonaws.com/payment-service-api:latest|${{ steps.build-image.outputs.image }}|g' k8s/deployment.yaml
+          
+          # Aplicar manifests em ordem
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/secrets.yaml
+          kubectl apply -f k8s/newrelic-secrets.yaml
+          kubectl apply -f k8s/kong-plugins.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/ingress.yaml
+
+      - name: Verify Deployment
+        run: |
+          echo "🚀 Verificando status do deploy..."
+          
+          # Aguardar API estar pronta
+          echo "⏳ Aguardando Payment API..."
+          kubectl wait --for=condition=ready pod -l app=payment-api -n tech-challenge-payment --timeout=300s
+          
+          # Verificar status final
+          echo "📊 Status dos recursos:"
+          kubectl get pods -n tech-challenge-payment -o wide
+          kubectl get svc -n tech-challenge-payment
+          kubectl get ingress -n tech-challenge-payment
+          
+          # Verificar logs se houver problemas
+          echo "📝 Verificando logs da API:"
+          kubectl logs -l app=payment-api -n tech-challenge-payment --tail=10 || true
+          
+          echo "✅ Deploy da API concluído com sucesso!"
       
-      # TODO: Adicionar passo para acionar o deploy no AWS App Runner
-      # - name: Deploy to AWS App Runner
-      #   run: aws apprunner start-deployment --service-arn ${{ secrets.APP_RUNNER_SERVICE_ARN }}
-
-
-  deploy-command-processor:
+  deploy-lambda-processor:
     needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -84,7 +126,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }} 
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup SAM CLI
@@ -116,3 +159,5 @@ jobs:
               ParameterKey=ElasticUrl,ParameterValue=${{ secrets.ELASTIC_URL }} \
               ParameterKey=ElasticId,ParameterValue=${{ secrets.ELASTIC_ID }} \
               ParameterKey=ElasticApiKey,ParameterValue=${{ secrets.ELASTIC_API_KEY }}
+        
+          echo "🚀 Lambda Payment Processor deploy concluído!"

@@ -1,0 +1,17 @@
+# Payment API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api-service
+  namespace: tech-challenge-payment
+  labels:
+    app: payment-api
+spec:
+  selector:
+    app: payment-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      name: http
+  type: ClusterIP

@@ -1,5 +1,4 @@
 ﻿using Application.Interfaces.Event;
-using Application.Interfaces.RabbitMQ;
 using Application.Interfaces.Services;
 using Application.Mappers;
 using Domain.Aggregates;
