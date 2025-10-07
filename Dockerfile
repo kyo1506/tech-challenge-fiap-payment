@@ -18,7 +18,6 @@ COPY ["Application/Application.csproj", "Application/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 COPY ["Shared/Shared.csproj", "Shared/"]
-COPY ["Data/Data.csproj", "Data/"]
 COPY ["Domain.Tests/Domain.Tests.csproj", "Domain.Tests/"]
 COPY ["PaymentService.Processor/PaymentService.Processor.csproj", "PaymentService.Processor/"]
 
