@@ -18,14 +18,18 @@ COPY ["Application/Application.csproj", "Application/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 COPY ["Shared/Shared.csproj", "Shared/"]
+COPY ["Data/Data.csproj", "Data/"]
 COPY ["Domain.Tests/Domain.Tests.csproj", "Domain.Tests/"]
 COPY ["PaymentService.Processor/PaymentService.Processor.csproj", "PaymentService.Processor/"]
 
 # Restore dependencies for the entire solution
 RUN dotnet restore "TechChallengeFIAP.Payment.sln"
 
-# Publish the application (New Relic packages already in .csproj if needed)
-RUN dotnet publish Presentation/Presentation.csproj -c Release -o /app/publish --no-restore
+# Copy the rest of the application source code
+COPY . .
+
+# Publish the application (with restore to avoid cache issues)
+RUN dotnet publish Presentation/Presentation.csproj -c Release -o /app/publish
 
 # --- Final Stage ---
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine AS final
