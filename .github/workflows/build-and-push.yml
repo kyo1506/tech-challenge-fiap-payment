@@ -95,9 +95,13 @@ jobs:
         run: |
           echo "🚀 Verificando status do deploy..."
           
-          # Aguardar API estar pronta
-          echo "⏳ Aguardando Payment API..."
-          kubectl wait --for=condition=ready pod -l app=payment-api -n tech-challenge-payment --timeout=300s
+          # Aguardar deployment estar pronto (mais confiável que pods individuais)
+          echo "⏳ Aguardando Payment API Deployment..."
+          kubectl rollout status deployment/payment-api -n tech-challenge-payment --timeout=300s
+          
+          # Verificar se pelo menos 1 pod está ready
+          echo "🔍 Verificando pods prontos..."
+          kubectl wait --for=condition=ready pod -l app=payment-api -n tech-challenge-payment --timeout=60s || echo "⚠️ Nem todos os pods estão prontos, mas continuando..."
           
           # Verificar status final
           echo "📊 Status dos recursos:"
