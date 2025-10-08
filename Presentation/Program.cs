@@ -87,18 +87,18 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<SqsCommandPublisher>();
 builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
 builder.Services.AddAWSService<IAmazonSQS>();
 
 builder.Services.AddScoped<ICommandPublisher, SqsCommandPublisher>();
+
+builder.Services.AddScoped<IEventStoreUnitOfWork, EventStoreUnitOfWork>();
 
 builder.Services.AddScoped<IWalletRepository, EfWalletRepository>();
 builder.Services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();
 
 builder.Services.AddScoped<IWalletApplicationService, WalletApplicationService>();
 builder.Services.AddScoped<IPurchaseApplicationService, PurchaseApplicationService>();
-builder.Services.AddScoped<IEventStoreUnitOfWork, EventStoreUnitOfWork>();
 
 builder.Services.AddCors(options =>
 {
