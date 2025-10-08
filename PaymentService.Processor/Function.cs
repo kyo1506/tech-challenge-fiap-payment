@@ -4,6 +4,7 @@ using Amazon.SimpleNotificationService;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Application.Interfaces.Event;
+using Application.Interfaces.MessageBus;
 using Application.Interfaces.Services;
 using Application.Services;
 using Domain.Exceptions;
@@ -218,6 +219,8 @@ public class Function
         services.AddScoped<IWalletRepository, EfWalletRepository>();
         services.AddScoped<IPurchaseRepository, EfPurchaseRepository>();
         services.AddScoped<IWalletApplicationService, WalletApplicationService>();
+        services.AddScoped<ICommandPublisher, SqsCommandPublisher>();
+
         services.AddScoped<IPurchaseApplicationService, PurchaseApplicationService>();
     }
     private class CommandEnvelope { 
